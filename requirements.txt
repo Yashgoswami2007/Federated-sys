@@ -6,3 +6,4 @@ transformers
 accelerate
 numpy
 tqdm
+psutil

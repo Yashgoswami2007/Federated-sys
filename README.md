@@ -198,6 +198,7 @@ Memory savings vs full fine-tuning:
 | Radeon RX 7900 XTX | 24GB | 16 | 8 | 2.0× |
 | Ryzen AI Laptop | 16GB | 8 | 4 | 1.0× |
 | Steam Deck | 16GB (shared) | 4 | 2 | 0.5× |
+| CPU-Only PC | CPU RAM | 2 | 1 | 0.1× |
 
 **Adaptive pruning:** Devices with < 8GB available VRAM receive a pruned model (40% sparsity) to participate without OOM errors.
 
