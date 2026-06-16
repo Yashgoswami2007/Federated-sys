@@ -1,20 +1,126 @@
 # FusionNet Architecture
 
-This document will contain the high-level system architecture and component breakdown for the FusionNet federated learning system.
+This document covers the high-level system architecture and component breakdown for the FusionNet federated learning system.
+
+---
 
 ## Hardware Abstraction Layer
 
 FusionNet uses a dynamic hardware detection framework (`hardware_utils.py`) to seamlessly support heterogeneous edge devices.
 
-When a node joins the federated network, the framework analyzes the local system:
-1. **GPU Check**: It checks `torch.cuda.is_available()` to determine if an AMD ROCm or NVIDIA CUDA device is present.
-2. **RAM Check**: It evaluates available system RAM (via `psutil`) or VRAM.
-3. **Dynamic Scaling**: Based on the hardware tier, it returns an optimal configuration mapping:
-   - **High-End GPU**: `device='cuda'`, Float16/Int4, large batch sizes, AFLoRA rank 64.
-   - **Low-End GPU**: `device='cuda'`, Int4, small batch sizes, AFLoRA rank 4-8.
-   - **CPU-Only**: `device='cpu'`, Float32/Int8, batch size 1, AFLoRA rank 2.
+When a node joins the federated network, the framework analyses the local system:
 
-### 4. Communication Layer
-FusionNet serializes the `A` matrices of the AFLoRA adapters into highly efficient **Base64** strings to dramatically reduce JSON payload sizes when communicating over HTTP/WebSockets with the coordinator.
+1. **GPU Check**: Checks `torch.cuda.is_available()` to determine if an AMD ROCm or NVIDIA CUDA device is present.
+2. **RAM Check**: Evaluates available system RAM (via `psutil`) or VRAM.
+3. **Dynamic Scaling**: Based on the hardware tier, it returns an optimal configuration:
 
-This fallback ensures that even basic PCs without dedicated graphics hardware can participate in the global model updates.
+| Tier | Device | LoRA Rank | Batch Size | Contribution Weight |
+|---|---|---|---|---|
+| `MI300X` | AMD MI300X Cloud | 64 | 32 | 2.0× |
+| `RX_7900_XTX` | Radeon 7900 / High-end GPU | 16–32 | 8–16 | 1.0× |
+| `Steam_Deck` | Steam Deck / Low-VRAM GPU | 4–8 | 2–4 | 0.5× |
+| `CPU_only` | Office PC, no GPU | 2–4 | 1–2 | 0.1× |
+
+---
+
+## Model Selection Constraint
+
+> **Critical:** AFLoRA federated aggregation requires all clients in the same round to share **identical model architecture**. The coordinator averages `A` matrices by index. If Client A trains on Llama-3-8B (hidden size 4096) and Client B trains on TinyLlama-1.1B (hidden size 2048), the `A` matrix shapes do not match and aggregation crashes.
+
+### Current Status
+- `config.yaml` `model.name` defaults to `"meta-llama/Meta-Llama-3-8B"`.
+- Llama-3-8B requires ≈6.5 GB VRAM in 4-bit or ≈32 GB RAM in FP32 — **CPU-only office PCs cannot run it**, which contradicts the heterogeneous-device pitch.
+
+### Recommended Fix (Pending Implementation)
+Set `model.name: "auto"` and wire `fusionnet-client/models/loader.py` to call `fusionnet/models/model_selector.py` when the value is `"auto"`. For the hackathon demo, standardise the entire federation on a single small open model so every device tier can participate:
+
+| Use Case | Recommended Model |
+|---|---|
+| Full federation demo (all tiers) | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` |
+| GPU-only federation | `microsoft/Phi-3-mini-4k-instruct` |
+| Cloud/high-VRAM only | `meta-llama/Meta-Llama-3-8B-Instruct` |
+
+`TinyLlama` shares the Llama transformer architecture, so all AFLoRA injection and aggregation code works identically with no changes. It is not gated and requires no HuggingFace token.
+
+### Production Path: Architecture Cohorts
+In production, devices can be grouped into architecture-specific cohorts. Each cohort runs its own FedAvg round on its own global model. Cross-cohort knowledge transfer requires knowledge distillation (out of scope for the hackathon).
+
+---
+
+## Dirichlet Non-IID Data Partitioning
+
+To honestly demonstrate federated learning's value, each simulated client must hold a **genuinely different** data distribution — just as a hospital clinic holds different sentiment patterns than a bank branch.
+
+FusionNet uses a **Dirichlet-skewed, device-tier-aware** partitioning strategy implemented in `fusionnet-client/datasets/partitioner.py`.
+
+### How It Works
+
+For each label class `c`, the fraction of class `c`'s samples assigned to each client is drawn from a Dirichlet distribution with concentration parameter α:
+
+```
+proportions_c ~ Dirichlet([α, α, ..., α])   (length = num_clients)
+```
+
+- **High α** → proportions are nearly equal across clients → balanced, near-IID shard
+- **Low α** → one client gets most of class `c` → heavy label skew, non-IID
+
+### Device Tier → Data Configuration
+
+Both the skewness (α) and the maximum shard size (data_fraction) are determined by the device tier, so heterogeneity is visible in the **actual data**, not just in LoRA rank numbers:
+
+| Tier | Dirichlet α | Max Shard Size | Real-World Analogy |
+|---|---|---|---|
+| `MI300X` | 10.0 (balanced) | 100% of corpus | Cloud node aggregating diverse sources |
+| `RX_7900_XTX` | 2.0 (mild skew) | 50% of corpus | Enterprise workstation at regional HQ |
+| `Steam_Deck` | 0.5 (heavy skew) | 20% of corpus | One department within a hospital |
+| `CPU_only` | 0.1 (extreme skew) | 8% of corpus | A single clinic or law firm branch |
+
+### Partition Isolation
+
+The `client_id` integer is added to the base random seed, so two CPU-only nodes with different IDs receive different shards even though they share the same tier configuration. This matches the real-world scenario where two law firms hold distinct legal precedents.
+
+### Judge Visibility
+
+At startup, each node prints a partition report automatically:
+
+```
+────────────────────────────────────────────────────────────
+  DATA PARTITION REPORT  │  Tier: CPU_only
+────────────────────────────────────────────────────────────
+  Profile     : Highly skewed, tiny shard (CPU-only office)
+  α (Dirichlet): 0.1  │  Max fraction: 8% of corpus
+  Shard size  : 800 samples
+  Dominant label: #42
+  Label spread: 7 unique classes in shard
+
+  Top-5 label distribution:
+    Label  42: ████████████████████████████████ 79.4%
+    Label   5: ███ 7.1%
+    Label  18: ██ 5.3%
+    Label   3: █ 4.2%
+    Label  11: █ 3.0%
+────────────────────────────────────────────────────────────
+```
+
+---
+
+## Communication Layer
+
+FusionNet serialises the `A` matrices of the AFLoRA adapters into **Base64** strings to efficiently encode binary tensor data into JSON-safe text for HTTP/WebSocket communication with the coordinator.
+
+```
+A matrix (float16 tensor) → numpy bytes → base64 string → JSON payload
+```
+
+This ensures even basic CPU-only PCs with no GPU can submit their local updates over a standard HTTP connection.
+
+---
+
+## Privacy Layer
+
+FusionNet implements DP-SGD with a dual-engine approach:
+
+1. **Primary**: Opacus `PrivacyEngine` — production-grade per-sample gradient clipping and Gaussian noise addition.
+2. **Fallback**: Custom `CustomPrivacyEngine` — same interface, used when Opacus hooks fail on dynamically quantized 4-bit modules (common on ROCm backends).
+
+Both engines guarantee (ε, δ)-differential privacy with `ε ≤ 1.0` and `δ ≤ 1e-5` as default targets.

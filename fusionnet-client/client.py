@@ -42,8 +42,14 @@ class FusionNetClient:
         )
         self.fed_client.load_local_adapter()
         
-    def train(self):
-        train_dataset, _ = get_dataset(self.config["dataset"], self.tokenizer)
+    def train(self, client_id: int = 0, num_clients: int = 10):
+        train_dataset, _ = get_dataset(
+            self.config["dataset"],
+            self.tokenizer,
+            device_tier=self.device_profile,
+            client_id=client_id,
+            num_clients=num_clients,
+        )
         dataloader, optimizer = setup_training(self.model, train_dataset, self.config["federation"])
         
         self.model, optimizer, dataloader, privacy_engine = setup_privacy(
