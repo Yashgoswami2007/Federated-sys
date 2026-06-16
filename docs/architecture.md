@@ -34,13 +34,15 @@ When a node joins the federated network, the framework analyses the local system
 ### Recommended Fix (Pending Implementation)
 Set `model.name: "auto"` and wire `fusionnet-client/models/loader.py` to call `fusionnet/models/model_selector.py` when the value is `"auto"`. For the hackathon demo, standardise the entire federation on a single small open model so every device tier can participate:
 
-| Use Case | Recommended Model |
-|---|---|
-| Full federation demo (all tiers) | `TinyLlama/TinyLlama-1.1B-Chat-v1.0` |
-| GPU-only federation | `microsoft/Phi-3-mini-4k-instruct` |
-| Cloud/high-VRAM only | `meta-llama/Meta-Llama-3-8B-Instruct` |
+Set `model.name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"` in `config.yaml` and distribute that config to every node before the federation round starts.
 
-`TinyLlama` shares the Llama transformer architecture, so all AFLoRA injection and aggregation code works identically with no changes. It is not gated and requires no HuggingFace token.
+**Why TinyLlama:**
+- Runs on CPU-only office PCs in FP32 (~2.5 GB RAM) — proves the pitch
+- Shares the Llama transformer architecture — AFLoRA injection, target modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`), and FedAvg aggregation all work with zero code changes
+- Not gated — no HuggingFace token required, zero setup friction for judges
+
+**Production path:** Llama-3-8B or Phi-3 can be used in GPU-only cohort federations. Each cohort runs its own FedAvg round with its own global model. This is a roadmap item, not a demo deliverable.
+
 
 ### Production Path: Architecture Cohorts
 In production, devices can be grouped into architecture-specific cohorts. Each cohort runs its own FedAvg round on its own global model. Cross-cohort knowledge transfer requires knowledge distillation (out of scope for the hackathon).

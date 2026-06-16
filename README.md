@@ -29,7 +29,7 @@
 | **One-Line Pitch** | Distributed inference network where AMD-powered edge devices collectively fine-tune a shared foundation model using federated learning and differential privacy. |
 | **Core Tech**      | Federated Learning · LoRA Fine-tuning · Differential Privacy · ZKP · ROCm |
 | **Target Hardware**| AMD MI300X (cloud) · Ryzen AI Laptops · Radeon Desktops · Steam Deck   |
-| **Foundation Model** | Llama 3-8B (4-bit quantized)                                         |
+| **Foundation Model** | TinyLlama-1.1B-Chat (federation standard) · scales to Llama-3-8B on GPU cohorts |
 | **Primary Market** | Healthcare · Finance · Legal (enterprises with strict data privacy laws)|
 | **Revenue Potential** | $50B enterprise AI market                                           |
 
@@ -295,18 +295,31 @@ For 4-bit model loading, FusionNet uses standard `transformers` integrated with 
 from transformers import AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.float16,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True,
-)
+# Federation-wide model — identical across ALL client nodes.
+# GPU nodes: 4-bit NF4 (~1.2 GB VRAM). CPU nodes: FP32 (~2.5 GB RAM).
+FEDERATION_MODEL = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
-model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Meta-Llama-3-8B-Instruct",
-    quantization_config=quantization_config,
-    device_map="auto",
-)
+if torch.cuda.is_available():
+    # GPU path — 4-bit NF4 quantization via bitsandbytes (ROCm 6.0+ supported)
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        FEDERATION_MODEL,
+        quantization_config=quantization_config,
+        device_map="auto",
+    )
+else:
+    # CPU path — FP32, no quantization, device_map=None
+    # TinyLlama-1.1B in FP32 ≈ 2.5 GB RAM; runs on any office PC.
+    model = AutoModelForCausalLM.from_pretrained(
+        FEDERATION_MODEL,
+        torch_dtype=torch.float32,
+        device_map=None,
+    )
 ```
 
 ---

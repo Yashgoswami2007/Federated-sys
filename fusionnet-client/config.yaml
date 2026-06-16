@@ -1,5 +1,9 @@
 model:
-  name: "meta-llama/Meta-Llama-3-8B"
+  # Federation-wide model — ALL nodes must use this exact model ID.
+  # TinyLlama-1.1B: ~2.5 GB in FP32, runs on any CPU-only office PC.
+  # Shares the Llama architecture so all AFLoRA/aggregation code works unchanged.
+  # Do NOT change per-device — a different architecture breaks FedAvg aggregation.
+  name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
   quantization_type: "nf4"
 
 federation:
