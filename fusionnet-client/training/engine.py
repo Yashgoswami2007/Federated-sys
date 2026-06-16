@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from ..aflora.injection import get_aflora_parameters
-from ..federation.privacy import setup_privacy, CustomPrivacyEngine
+from aflora.injection import get_aflora_parameters
+from federation.privacy import setup_privacy, CustomPrivacyEngine
 
 def train_local_epoch(model, dataloader, optimizer, device, config, privacy_engine=None):
     model.train()

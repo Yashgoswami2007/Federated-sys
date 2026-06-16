@@ -4,7 +4,7 @@ import torch
 from models.loader import load_llama
 from aflora.injection import inject_aflora, get_aflora_layers
 from federation.client import FederatedClient
-from datasets.loader import get_dataset
+from fl_datasets.loader import get_dataset
 from training.engine import setup_training, train_local_epoch
 from federation.privacy import setup_privacy
 

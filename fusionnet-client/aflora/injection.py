@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .layer import AFLoRALayer
+from aflora.layer import AFLoRALayer
 
 def inject_aflora(model, target_modules, rank, alpha=16):
     """

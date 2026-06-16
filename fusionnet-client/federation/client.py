@@ -1,8 +1,8 @@
 import os
 import json
 import torch
-from .privacy import serialize_tensor_base64, deserialize_tensor_base64
-from ..aflora.injection import get_aflora_layers
+from federation.privacy import serialize_tensor_base64, deserialize_tensor_base64
+from aflora.injection import get_aflora_layers
 
 class FederatedClient:
     def __init__(self, client_id, model, config, checkpoint_dir="checkpoints"):
