@@ -51,17 +51,26 @@ class AFLoRALayer(nn.Module):
         
     def forward(self, x):
         base_out = self.base_layer(x)
-        
+
         # x shape: (..., in_features)
         # B shape: (rank, in_features)
         # Lambda shape: (rank)
         # A shape: (out_features, rank)
-        
+
+        # Ensure AFLoRA parameters are on the same device/dtype as the input
+        # (needed when bitsandbytes places base layers on CUDA but parameters default to CPU)
+        device = x.device
+        dtype  = x.dtype
+        B      = self.B.to(device=device, dtype=dtype)
+        Lambda = self.Lambda.to(device=device, dtype=dtype)
+        A      = self.A.to(device=device, dtype=dtype)
+
         # lora_B_out = x @ B^T
-        lora_B_out = torch.nn.functional.linear(x, self.B)
+        lora_B_out = torch.nn.functional.linear(x, B)
         # Multiply by diagonal Lambda
-        lora_Lambda_out = lora_B_out * self.Lambda
+        lora_Lambda_out = lora_B_out * Lambda
         # lora_out = lora_Lambda_out @ A^T
-        lora_out = torch.nn.functional.linear(lora_Lambda_out, self.A)
-        
+        lora_out = torch.nn.functional.linear(lora_Lambda_out, A)
+
         return base_out + lora_out * self.scaling
+

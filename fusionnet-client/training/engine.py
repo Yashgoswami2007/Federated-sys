@@ -11,9 +11,14 @@ def train_local_epoch(model, dataloader, optimizer, device, config, privacy_engi
     progress_bar = tqdm(dataloader, desc="Local Training")
     for batch in progress_bar:
         batch = {k: v.to(device) for k, v in batch.items()}
-        
+
+        # LlamaForCausalLM expects labels == input_ids (shifted internally for CLM loss).
+        # The banking77 dataset 'labels' column contains class integers (0-76), which
+        # causes a shape mismatch. Override with input_ids for self-supervised training.
+        batch['labels'] = batch['input_ids'].clone()
+
         optimizer.zero_grad()
-        
+
         outputs = model(**batch)
         loss = outputs.loss
         

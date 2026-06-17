@@ -1,4 +1,5 @@
 from datasets import load_dataset
+import datasets as hf_datasets
 from torch.utils.data import DataLoader
 from .partitioner import dirichlet_partition, print_partition_report
 
@@ -28,6 +29,9 @@ def get_dataset(config, tokenizer, device_tier: str = "CPU_only", client_id: int
     text_column  = config.get("text_column", "text")
     label_column = config.get("label_column", "label")
 
+    # Disable HF caching so parallel clients don't race on the same temp files (Windows)
+    hf_datasets.disable_caching()
+
     print(f"Loading dataset: {dataset_name}")
     if dataset_name == "banking77":
         raw_dataset = load_dataset("banking77")
@@ -49,7 +53,7 @@ def get_dataset(config, tokenizer, device_tier: str = "CPU_only", client_id: int
             max_length=128,
         )
 
-    tokenized = raw_dataset.map(tokenize_function, batched=True, load_from_cache_file=False)
+    tokenized = raw_dataset.map(tokenize_function, batched=True)
 
     # Normalise label column name to 'labels'
     cols_to_remove = [

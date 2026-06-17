@@ -1,9 +1,9 @@
-# Federated-sys# 🔮 FusionNet — Project Plan & Execution Blueprint
+# Federated-sys#  FusionNet — Project Plan & Execution Blueprint
 >| AMD Developer Hackathon ACT II
 
 ---
 
-## 🧭 Table of Contents
+## Table of Contents
 
 1. [Project Overview](#1-project-overview)
 2. [Problem & Opportunity](#2-problem--opportunity)
@@ -37,7 +37,7 @@
 
 ## 2. Problem & Opportunity
 
-### 🔴 The Core Problem
+### The Core Problem
 
 Enterprises sitting on **mountains of sensitive data** cannot leverage modern LLMs because:
 
@@ -46,7 +46,7 @@ Enterprises sitting on **mountains of sensitive data** cannot leverage modern LL
 - **Existing federated learning frameworks** (Flower, FedML) are CUDA-first, poorly optimized for AMD hardware, and have no production-ready privacy stack.
 - **No unified solution exists** that combines: edge inference + privacy guarantees + heterogeneous device support + enterprise-grade compliance tooling.
 
-### 🟢 The Opportunity
+###  The Opportunity
 
 ```
                   DATA GRAVITY
