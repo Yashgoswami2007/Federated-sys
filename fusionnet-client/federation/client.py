@@ -1,7 +1,5 @@
 import os
-import json
 import torch
-from federation.privacy import serialize_tensor_base64, deserialize_tensor_base64
 from aflora.injection import get_aflora_layers
 from federation.hf_hub import HFParameterServer
 
@@ -83,8 +81,8 @@ class FederatedClient:
         lambda_path = os.path.join(self.checkpoint_dir, "local_lambda.pt")
         
         if os.path.exists(b_path) and os.path.exists(lambda_path):
-            b_state = torch.load(b_path)
-            lambda_state = torch.load(lambda_path)
+            b_state = torch.load(b_path, weights_only=True)
+            lambda_state = torch.load(lambda_path, weights_only=True)
             
             layers = get_aflora_layers(self.model)
             for i, layer in enumerate(layers):

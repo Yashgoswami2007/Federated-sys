@@ -17,30 +17,32 @@
 
 - `config.yaml`
   - Stores default settings for model, federation, dataset, privacy, and device profiles.
-  - Controls LoRA rank, learning rate, batch size, DP settings, and hardware-specific profiles.
-  - `model.name` should be set to `"auto"` to enable hardware-aware model selection (see `models/loader.py`).
+  - `model.name` is fixed to `"TinyLlama/TinyLlama-1.1B-Chat-v1.0"` — the federation-wide model. `models/loader.py` enforces this regardless of what is set here.
+  - `federation.hub.repo_id` points to `yash-goswami/fusionnet-coordinator` (private HF Dataset).
+  - LoRA rank and batch size are overridden per device profile at runtime.
 
 - `main.py`
   - CLI entry point to start the client.
-  - Accepts `--client-id` (int) and `--num-clients` (int) arguments for federation identity.
-  - Creates `FusionNetClient`, runs local training with the correct Dirichlet shard, and exports A matrix updates.
+  - Accepts `--client-id` (int), `--num-clients` (int), and `--rounds` (int) arguments.
+  - Authenticates with HF at startup via `auth.hf_login()`.
+  - Runs a full FL round loop: pull global A → local train → push local A update to HF Hub.
 
 - `client.py`
-  - Main client class `FusionNetClient`.
-  - Loads config, detects hardware, loads the base model, injects AFLoRA adapters, sets up training, and runs local training rounds.
-  - `train(client_id, num_clients)` passes hardware profile and client identity to the dataset loader for Dirichlet partitioning.
-  - Also creates the federated client and saves adapter weights locally.
+  - Main client class `FusionNetClient(config_path, client_id)`.
+  - `client_id` is passed into the constructor and forwarded to `FederatedClient` as `"client_{id}"`, ensuring each node uploads to a unique file on the HF Hub.
+  - `train(num_clients)` handles dataset loading with the correct Dirichlet shard and runs local training epochs.
 
 - `training/engine.py`
   - Defines training utilities.
-  - Builds the DataLoader and optimizer for AFLoRA parameters.
-  - Runs one local training epoch and applies DP or normal optimization.
+  - Builds the DataLoader and optimizer for AFLoRA B and Lambda parameters only.
+  - Runs one local training epoch with correct gradient lifecycle: `zero_grad → forward → backward → step → zero_grad`.
+  - Both Opacus and CustomPrivacyEngine paths call `zero_grad()` after `step()` to prevent gradient accumulation across batches.
 
 - `models/loader.py`
-  - Detects hardware profile and loads a model.
-  - Uses 4-bit quantization on GPU; falls back to FP32 on CPU.
-  - Freezes the base model weights so only adapters train.
-  - **Pending:** wire `model.name = "auto"` path to `select_model_for_hardware()` so CPU-only nodes automatically load a lightweight model (e.g. TinyLlama-1.1B) instead of crashing on Llama-3-8B.
+  - Detects hardware profile and loads the federation model (`TinyLlama/TinyLlama-1.1B-Chat-v1.0`).
+  - Any `model.name` value in config is overridden to the federation constant with a warning — prevents aggregation crashes from shape mismatches.
+  - Uses 4-bit NF4 quantization on GPU (bitsandbytes); falls back to FP32 on CPU (`device_map=None`).
+  - Freezes all base model weights so only AFLoRA B and Lambda matrices train.
 
 - `aflora/layer.py`
   - Defines the `AFLoRALayer`.
@@ -51,9 +53,12 @@
   - Finds target modules in the model and replaces them with AFLoRA layers.
   - Provides helper functions to get AFLoRA parameters and layers.
 
-- `federation/client.py`
-  - Handles federated client workflows.
-  - Registers the client, exports local `A` matrices, loads global `A` matrices, and saves/loads local adapter state.
+- `federation/hf_hub.py`
+  - `HFParameterServer` — wraps HF Hub as the federated parameter server.
+  - Authenticates via `auth.get_token()` (reads `HF_TOKEN` from `.env`).
+  - `upload_local_A_matrices(round_num, client_id, updates)` — pushes `round_N/client_K.pt` to the private repo.
+  - `download_global_A_matrices(round_num)` — fetches `global/Global_A_round_N.pt`; returns `None` if not yet available.
+  - Repo: `yash-goswami/fusionnet-coordinator` (private HF Dataset).
 
 - `federation/privacy.py`
   - Manages differential privacy.
@@ -175,9 +180,13 @@
 
 ## scripts folder summary
 
-- `launch_fl_round.sh`
-  - Shell script stub for launching a federated learning round.
-  - Contains commented placeholders for starting coordinator and local client processes.
+- `hf_coordinator.py`
+  - Serverless FL coordinator using HF Hub as parameter server.
+  - Authenticates via `HF_TOKEN` from `.env`.
+  - Polls `list_repo_files()` until all expected client `.pt` files appear for the round.
+  - Downloads all client A matrices, runs FedAvg layer-by-layer, and uploads `global/Global_A_round_N.pt`.
+  - Args: `--repo-id` (default: `yash-goswami/fusionnet-coordinator`), `--num-clients`, `--rounds`.
+  - Run in parallel with client nodes: `python scripts/hf_coordinator.py --num-clients 3 --rounds 3`.
 
 - `setup_cuda.sh`
   - Script to install NVIDIA CUDA-compatible PyTorch and dependencies.

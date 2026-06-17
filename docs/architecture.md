@@ -28,24 +28,15 @@ When a node joins the federated network, the framework analyses the local system
 > **Critical:** AFLoRA federated aggregation requires all clients in the same round to share **identical model architecture**. The coordinator averages `A` matrices by index. If Client A trains on Llama-3-8B (hidden size 4096) and Client B trains on TinyLlama-1.1B (hidden size 2048), the `A` matrix shapes do not match and aggregation crashes.
 
 ### Current Status
-- `config.yaml` `model.name` defaults to `"meta-llama/Meta-Llama-3-8B"`.
-- Llama-3-8B requires ≈6.5 GB VRAM in 4-bit or ≈32 GB RAM in FP32 — **CPU-only office PCs cannot run it**, which contradicts the heterogeneous-device pitch.
-
-### Recommended Fix (Pending Implementation)
-Set `model.name: "auto"` and wire `fusionnet-client/models/loader.py` to call `fusionnet/models/model_selector.py` when the value is `"auto"`. For the hackathon demo, standardise the entire federation on a single small open model so every device tier can participate:
-
-Set `model.name: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"` in `config.yaml` and distribute that config to every node before the federation round starts.
+`config.yaml` `model.name` is set to `"TinyLlama/TinyLlama-1.1B-Chat-v1.0"` and `models/loader.py` enforces this federation-wide — any other value is overridden with a warning. All nodes run the same model regardless of hardware tier.
 
 **Why TinyLlama:**
-- Runs on CPU-only office PCs in FP32 (~2.5 GB RAM) — proves the pitch
-- Shares the Llama transformer architecture — AFLoRA injection, target modules (`q_proj`, `k_proj`, `v_proj`, `o_proj`), and FedAvg aggregation all work with zero code changes
-- Not gated — no HuggingFace token required, zero setup friction for judges
-
-**Production path:** Llama-3-8B or Phi-3 can be used in GPU-only cohort federations. Each cohort runs its own FedAvg round with its own global model. This is a roadmap item, not a demo deliverable.
-
+- Runs on CPU-only office PCs in FP32 (~2.5 GB RAM) — proves the heterogeneous pitch
+- Shares the Llama transformer architecture — AFLoRA injection, target modules, and FedAvg aggregation all work with zero code changes
+- Not gated — no special HuggingFace access required
 
 ### Production Path: Architecture Cohorts
-In production, devices can be grouped into architecture-specific cohorts. Each cohort runs its own FedAvg round on its own global model. Cross-cohort knowledge transfer requires knowledge distillation (out of scope for the hackathon).
+In production, devices can be grouped into architecture-specific cohorts. Each cohort runs its own FedAvg round on its own global model (e.g. GPU cohort on Llama-3-8B, CPU cohort on TinyLlama). Cross-cohort knowledge transfer requires knowledge distillation — roadmap item.
 
 ---
 
@@ -106,15 +97,48 @@ At startup, each node prints a partition report automatically:
 
 ---
 
-## Communication Layer
+## Communication Layer — HF Hub Parameter Server
 
-FusionNet serialises the `A` matrices of the AFLoRA adapters into **Base64** strings to efficiently encode binary tensor data into JSON-safe text for HTTP/WebSocket communication with the coordinator.
+FusionNet uses a private Hugging Face Dataset repository (`yash-goswami/fusionnet-coordinator`) as a serverless parameter server. No custom server infrastructure is needed.
+
+### Round protocol
 
 ```
-A matrix (float16 tensor) → numpy bytes → base64 string → JSON payload
+Client                                  HF Hub repo                      Coordinator
+  │                                         │                                 │
+  │── train locally ──────────────────────▶ │                                 │
+  │   upload round_N/client_K.pt ─────────▶ │                                 │
+  │                                         │◀── poll list_repo_files ────────│
+  │                                         │    (wait for all N clients)     │
+  │                                         │── download all round_N/*.pt ───▶│
+  │                                         │                                 │── FedAvg ──▶
+  │                                         │◀── upload global/Global_A_N.pt ─│
+  │◀── download global/Global_A_N.pt ───────│                                 │
+  │    load_global_A() into AFLoRA layers   │                                 │
 ```
 
-This ensures even basic CPU-only PCs with no GPU can submit their local updates over a standard HTTP connection.
+### File layout in repo
+
+```
+fusionnet-coordinator/
+├── round_1/
+│   ├── client_0.pt       # local A matrices from node 0
+│   ├── client_1.pt
+│   └── client_2.pt
+├── round_2/
+│   └── ...
+└── global/
+    ├── Global_A_round_1.pt   # aggregated A matrices from coordinator
+    └── Global_A_round_2.pt
+```
+
+### Authentication
+
+All Hub access is authenticated via `HF_TOKEN` loaded from `.env` at startup. Both `federation/hf_hub.py` and `scripts/hf_coordinator.py` call `auth.get_token()` on init. The repo is private so gradient updates are never publicly accessible.
+
+### Base64 serialisation (legacy path)
+
+The original HTTP path serialised A matrices into Base64 JSON strings. This is still available in `federation/privacy.py` (`serialize_tensor_base64` / `deserialize_tensor_base64`) for any future HTTP coordinator integration, but the primary path is now `.pt` files via the HF Hub.
 
 ---
 
@@ -122,7 +146,7 @@ This ensures even basic CPU-only PCs with no GPU can submit their local updates 
 
 FusionNet implements DP-SGD with a dual-engine approach:
 
-1. **Primary**: Opacus `PrivacyEngine` — production-grade per-sample gradient clipping and Gaussian noise addition.
-2. **Fallback**: Custom `CustomPrivacyEngine` — same interface, used when Opacus hooks fail on dynamically quantized 4-bit modules (common on ROCm backends).
+1. **Primary**: Opacus `PrivacyEngine` — production-grade per-sample gradient clipping and Gaussian noise addition. After `optimizer.step()`, `optimizer.zero_grad()` is called explicitly so Opacus gradient hooks don't accumulate across batches.
+2. **Fallback**: Custom `CustomPrivacyEngine` — same interface, used when Opacus hooks fail on dynamically quantized 4-bit modules (common on ROCm backends). Calls `clip → noise → step → zero_grad` in sequence.
 
 Both engines guarantee (ε, δ)-differential privacy with `ε ≤ 1.0` and `δ ≤ 1e-5` as default targets.

@@ -9,7 +9,7 @@ This is the local client component of FusionNet, a privacy-preserving federated 
 - **Hardware-Aware**: Automatically detects the environment (MI300X, RX 7900 XTX, Steam Deck, CPU) and scales adapter rank, batch size, and precision accordingly.
 - **Dirichlet Non-IID Partitioning**: Each node receives a data shard whose size and label skewness are both determined by its hardware tier, mirroring real-world data gravity (a clinic's skewed records vs. a cloud node's balanced corpus).
 - **Differential Privacy**: Opacus-powered DP-SGD with a resilient custom fallback for 4-bit quantized modules.
-- **Communication**: Base64 serialisation of `A` matrices for JSON-safe HTTP communication.
+- **Communication**: AFLoRA `A` matrices are serialised as `.pt` files and exchanged via a private Hugging Face Dataset repo (`yash-goswami/fusionnet-coordinator`) — no custom server needed.
 
 ## Quickstart
 
@@ -60,23 +60,34 @@ pip install -r requirements.txt
 
 ```bash
 # Linux / macOS
-# Node 0 of a 4-client federation (auto-detects hardware tier)
-python main.py --client-id 0 --num-clients 4
+# Node 0 of a 4-client federation, running 3 FL rounds
+python main.py --client-id 0 --num-clients 4 --rounds 3
 
 # Node 1 of the same federation (gets a different Dirichlet shard)
-python main.py --client-id 1 --num-clients 4
+python main.py --client-id 1 --num-clients 4 --rounds 3
 ```
 
 ```powershell
 # Windows PowerShell (same arguments)
-python main.py --client-id 0 --num-clients 4
-python main.py --client-id 1 --num-clients 4
+python main.py --client-id 0 --num-clients 4 --rounds 3
+python main.py --client-id 1 --num-clients 4 --rounds 3
 ```
 
 | Argument | Default | Description |
 |---|---|---|
-| `--client-id` | `0` | Unique integer ID for this node. Seeds the Dirichlet partition so each node gets a distinct shard. |
+| `--client-id` | `0` | Unique integer ID for this node. Seeds the Dirichlet partition so each node gets a distinct shard. Also used as the upload key (`client_0.pt`) on the HF Hub. |
 | `--num-clients` | `10` | Total number of clients in the federation. Used to split label-class proportions via Dirichlet. |
+| `--rounds` | `1` | Number of FL rounds to run. Each round: pull global A → train locally → push local A to HF Hub. |
+
+### Run the Coordinator
+
+In a separate terminal, start the coordinator to aggregate client updates:
+
+```bash
+python scripts/hf_coordinator.py --num-clients 4 --rounds 3
+```
+
+The coordinator polls the private HF repo (`yash-goswami/fusionnet-coordinator`) until all clients have uploaded for each round, then runs FedAvg and pushes the global A matrices back.
 
 ### Run Examples
 
@@ -131,7 +142,8 @@ fusionnet-client/
 │   ├── layer.py               # AFLoRA (A × Λ × B) module
 │   └── injection.py           # Target module replacer
 ├── federation/
-│   ├── client.py              # Base64 comms & state management
+│   ├── client.py              # HF Hub comms & adapter state management
+│   ├── hf_hub.py              # HFParameterServer (upload/download A matrices)
 │   └── privacy.py             # Abstract DP engine (Opacus + fallback)
 ├── training/
 │   └── engine.py              # Local training loop

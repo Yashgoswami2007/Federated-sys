@@ -630,11 +630,13 @@ The local client proof-of-concept has been successfully implemented in the `fusi
 ```
 fusionnet/
 ├── README.md
+├── .env                           # ⬅️ (gitignored) HF_TOKEN=your_token_here
 ├── docs/
 ├── fusionnet-client/              # ⬅️ Local Client PoC Component
 │   ├── README.md
-│   ├── main.py                    # Node CLI entry point
-│   ├── client.py                  # Standalone client module
+│   ├── main.py                    # Node CLI entry point (--client-id, --num-clients, --rounds)
+│   ├── client.py                  # FusionNetClient orchestrator
+│   ├── auth.py                    # HF authentication (reads HF_TOKEN from .env)
 │   ├── config.yaml                # Device & training config
 │   ├── requirements.txt
 │   ├── models/
@@ -643,20 +645,24 @@ fusionnet/
 │   │   ├── layer.py               # AFLoRA (A x Λ x B) module
 │   │   └── injection.py           # Target module replacer
 │   ├── federation/
-│   │   ├── client.py              # Base64 Comms & State management
-│   │   └── privacy.py             # Abstract DP Engine
+│   │   ├── client.py              # HF Hub comms & adapter state management
+│   │   ├── hf_hub.py              # HFParameterServer (upload/download A matrices)
+│   │   └── privacy.py             # Abstract DP Engine (Opacus + fallback)
 │   ├── training/
 │   │   └── engine.py              # Local training loop
-│   ├── datasets/
-│   │   └── loader.py              # HuggingFace Datasets interface
+│   ├── fl_datasets/
+│   │   ├── __init__.py
+│   │   ├── loader.py              # HuggingFace Datasets interface + Dirichlet partition
+│   │   └── partitioner.py         # Dirichlet Non-IID partitioner
 │   └── scripts/
 │       ├── example_train.py
 │       └── example_federated_round.py
 └── scripts/
-    ├── setup_env.ps1              # ⬅️ Windows: one-shot environment setup
-    ├── setup_cuda.ps1             # ⬅️ Windows: NVIDIA CUDA setup
-    ├── setup_rocm.ps1             # ⬅️ Windows: AMD ROCm (CPU + WSL2 guide)
-    ├── launch_fl_round.ps1        # ⬅️ Windows: multi-client FL launcher
+    ├── hf_coordinator.py          # ⬅️ Serverless FL coordinator (polls HF Hub, runs FedAvg)
+    ├── setup_env.ps1              # Windows: one-shot environment setup
+    ├── setup_cuda.ps1             # Windows: NVIDIA CUDA setup
+    ├── setup_rocm.ps1             # Windows: AMD ROCm (CPU + WSL2 guide)
+    ├── launch_fl_round.ps1        # Windows: multi-client FL launcher
     ├── setup_cuda.sh              # Linux/WSL2: NVIDIA CUDA setup
     ├── setup_rocm.sh              # Linux/WSL2: AMD ROCm setup
     ├── launch_fl_round.sh         # Linux/WSL2: FL round launcher
@@ -702,14 +708,14 @@ The `.env` file is gitignored and will not be committed.
 
 ```powershell
 cd fusionnet-client
-python main.py --client-id 0 --num-clients 4
+python main.py --client-id 0 --num-clients 4 --rounds 3
 ```
 
-### Step 3 — Launch a Full Federated Round
+### Step 2.5 — Run the Coordinator (separate terminal)
 
 ```powershell
-# From repo root — spawns 3 clients in parallel as background jobs
-.\scripts\launch_fl_round.ps1 -NumClients 3 -FederationRounds 1
+# From repo root — polls HF Hub and aggregates client updates
+python scripts/hf_coordinator.py --num-clients 4 --rounds 3
 ```
 
 ### AMD GPU on Windows — WSL2 Path

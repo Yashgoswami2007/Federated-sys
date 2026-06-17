@@ -81,3 +81,18 @@ Current status: `comms/rccl_backend.py` is a placeholder. The planned use is `di
 The data partitioning system (`datasets/partitioner.py`) is hardware-aware by design. The AMD hardware tier detected at startup directly determines both the shard size and the Dirichlet concentration parameter for the Non-IID split. This means AMD hardware capability is not just a training parameter — it shapes the data the node is allowed to see, creating a coherent heterogeneity story across compute and data layers simultaneously.
 
 See `docs/architecture.md` for the full tier-to-partition mapping.
+
+---
+
+## Hugging Face Hub as Serverless Parameter Server
+
+FusionNet uses a private HF Dataset repository (`yash-goswami/fusionnet-coordinator`) to exchange AFLoRA `A` matrices between clients and the coordinator without any custom server infrastructure.
+
+`federation/hf_hub.py` wraps `HfApi` and `hf_hub_download` into two methods:
+
+- `upload_local_A_matrices(round_num, client_id, updates)` — serialises a list of tensors to a `.pt` file and pushes to `round_N/client_K.pt`
+- `download_global_A_matrices(round_num)` — fetches `global/Global_A_round_N.pt`, returns `None` if not yet available
+
+Authentication is handled by `auth.get_token()`, which reads `HF_TOKEN` from `.env`. The token is passed directly to `HfApi(token=...)` so no global CLI login state is required.
+
+The coordinator (`scripts/hf_coordinator.py`) polls `list_repo_files()` until all expected client files appear, then downloads, FedAvgs, and re-uploads the global result. This makes the coordinator fully stateless — it can be restarted at any point in a round without data loss.

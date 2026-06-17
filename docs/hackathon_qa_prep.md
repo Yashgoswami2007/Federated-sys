@@ -97,3 +97,19 @@ FusionNet targets **(ε = 1.0, δ = 1e-5)-differential privacy** per training ro
 ```
 
 The privacy budget is tracked per round using the Opacus RDP accountant. If Opacus hooks fail on a 4-bit quantized module (common on ROCm), the custom `CustomPrivacyEngine` fallback applies identical noise with the same formula, maintaining the guarantee. The ε value after 20 rounds is logged and shown in the demo output.
+
+---
+
+## Q9: How does your coordinator work without a dedicated server?
+
+**Answer:**
+FusionNet uses a private Hugging Face Dataset repository (`yash-goswami/fusionnet-coordinator`) as a zero-infrastructure parameter server. Clients push their local `A` matrix updates as `.pt` files to `round_N/client_K.pt`. The coordinator script polls `list_repo_files()` until all expected clients have uploaded, downloads them, runs FedAvg, and pushes the averaged result to `global/Global_A_round_N.pt`. Clients then pull that file at the start of the next round.
+
+This means the entire federation runs with no cloud VM, no open port, and no custom API — just Python scripts and a private HF repo. It's fully auditable (every round's updates are versioned on the Hub) and costs nothing to operate beyond HF's free tier storage.
+
+---
+
+## Q10: How do you authenticate clients to the parameter server?
+
+**Answer:**
+Each node loads a `HF_TOKEN` from a local `.env` file (gitignored, never committed). The token is passed directly to `HfApi(token=...)` in `federation/hf_hub.py`. Since the HF dataset repo is private, only tokens with read/write access to `yash-goswami/fusionnet-coordinator` can push or pull updates. In production, each client would have a scoped write token granting access only to their own `round_N/client_K.pt` path.
