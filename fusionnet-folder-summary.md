@@ -8,7 +8,12 @@
 
 - `requirements.txt`
   - Lists Python packages needed to run the client.
-  - Includes `torch`, `transformers`, `bitsandbytes`, `opacus`, `datasets`, `pyyaml`, `tqdm`, and `numpy`.
+  - Includes `torch`, `transformers`, `bitsandbytes`, `opacus`, `datasets`, `pyyaml`, `tqdm`, `numpy`, and `python-dotenv`.
+
+- `auth.py`
+  - Loads `HF_TOKEN` from the `.env` file in the repo root using `python-dotenv`.
+  - Calls `huggingface_hub.login()` to authenticate before model downloads.
+  - Run once before starting any training or model loading: `python fusionnet-client/auth.py`.
 
 - `config.yaml`
   - Stores default settings for model, federation, dataset, privacy, and device profiles.

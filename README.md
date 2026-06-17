@@ -682,6 +682,22 @@ FusionNet runs natively on Windows. All scripts have `.ps1` (PowerShell) equival
 .\scripts\setup_env.ps1 -Backend rocm
 ```
 
+### Step 1.5 — Hugging Face Authentication
+
+Create a `.env` file in the repo root with your HF token (get one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)):
+
+```
+HF_TOKEN=your_token_here
+```
+
+Then run:
+
+```powershell
+python fusionnet-client/auth.py
+```
+
+The `.env` file is gitignored and will not be committed.
+
 ### Step 2 — Run a Client Node
 
 ```powershell

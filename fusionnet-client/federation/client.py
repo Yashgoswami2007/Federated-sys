@@ -3,6 +3,7 @@ import json
 import torch
 from federation.privacy import serialize_tensor_base64, deserialize_tensor_base64
 from aflora.injection import get_aflora_layers
+from federation.hf_hub import HFParameterServer
 
 class FederatedClient:
     def __init__(self, client_id, model, config, checkpoint_dir="checkpoints"):
@@ -11,38 +12,54 @@ class FederatedClient:
         self.config = config
         self.checkpoint_dir = checkpoint_dir
         
+        hub_cfg = config.get("federation", {}).get("hub", {})
+        if "repo_id" in hub_cfg:
+            self.hf_server = HFParameterServer(
+                repo_id=hub_cfg["repo_id"], 
+                repo_type=hub_cfg.get("repo_type", "dataset")
+            )
+        else:
+            self.hf_server = None
+            
         os.makedirs(checkpoint_dir, exist_ok=True)
         
     def register_client(self):
         print(f"Client {self.client_id} registered.")
         
-    def receive_global_A(self, a_payloads):
+    def receive_global_A(self, round_num):
         """
-        Loads the global A matrices from the coordinator.
-        a_payloads: List of JSON/dict objects containing base64 A matrices.
+        Downloads and loads the global A matrices from the HF Hub for the given round.
+        Returns True if successful, False if the global weights are not ready yet.
         """
+        if not self.hf_server:
+            print("HF Hub not configured. Skipping global A sync.")
+            return False
+            
+        global_tensors = self.hf_server.download_global_A_matrices(round_num)
+        if global_tensors is None:
+            return False
+            
         layers = get_aflora_layers(self.model)
-        for i, payload in enumerate(a_payloads):
+        for i, a_tensor in enumerate(global_tensors):
             if i < len(layers):
-                a_tensor = deserialize_tensor_base64(payload["payload"], payload["shape"])
                 layers[i].load_global_A(a_tensor)
+        return True
                 
     def export_A_update(self, round_num):
         """
-        Exports the A matrices from the local model to send to the coordinator.
+        Exports the A matrices from the local model and pushes them to the HF Hub.
         """
         layers = get_aflora_layers(self.model)
         updates = []
         for layer in layers:
             a_tensor = layer.export_A()
-            updates.append({
-                "client_id": self.client_id,
-                "round": round_num,
-                "shape": list(a_tensor.shape),
-                "dtype": "float16",
-                "encoding": "base64",
-                "payload": serialize_tensor_base64(a_tensor)
-            })
+            updates.append(a_tensor.cpu())
+            
+        if self.hf_server:
+            self.hf_server.upload_local_A_matrices(round_num, self.client_id, updates)
+        else:
+            print("HF Hub not configured. Update not synced.")
+            
         return updates
         
     def save_local_adapter(self):

@@ -13,11 +13,28 @@ This is the local client component of FusionNet, a privacy-preserving federated 
 
 ## Quickstart
 
+### Prerequisites: Hugging Face Authentication
+
+This project loads models from Hugging Face. Before running, set up your token:
+
+1. Get a token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) (read scope is sufficient)
+2. Create a `.env` file in the repo root:
+   ```
+   HF_TOKEN=your_token_here
+   ```
+3. Authenticate at startup:
+   ```bash
+   python fusionnet-client/auth.py
+   ```
+
+The `.env` file is gitignored and will not be committed.
+
 ### Linux / macOS
 
 ```bash
 cd fusionnet-client
 pip install -r requirements.txt
+python ../auth.py  # authenticate with Hugging Face
 ```
 
 ### Windows (PowerShell)
@@ -104,8 +121,10 @@ The shard configuration per tier:
 fusionnet-client/
 ├── main.py                    # CLI entry point (--client-id, --num-clients)
 ├── client.py                  # FusionNetClient orchestrator
+├── auth.py                    # Hugging Face authentication (loads HF_TOKEN from .env)
 ├── config.yaml                # Device & training config
 ├── requirements.txt
+├── .env                       # (gitignored) HF_TOKEN=your_token_here
 ├── models/
 │   └── loader.py              # Hardware detection + model loading
 ├── aflora/

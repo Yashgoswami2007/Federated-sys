@@ -13,6 +13,9 @@ federation:
   batch_size: 4
   aggregation_frequency: 1 # Epochs before syncing
   target_modules: ["q_proj", "v_proj"] # Configurable injection scope
+  hub:
+    repo_id: "Yashgoswami2007/fusionnet-coordinator" # Replace with your actual repo
+    repo_type: "dataset"
 
 dataset:
   name: "banking77" # Default PoC dataset
