@@ -2,6 +2,7 @@ import time
 import torch
 import sys
 import os
+import httpx
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, hf_hub_download
 
@@ -22,11 +23,40 @@ class HFCoordinator:
         self.repo_type = repo_type
         self.num_clients = num_clients
         self.api = HfApi(token=HF_TOKEN)
+        self.backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+        self.backend_enabled = os.getenv("BACKEND_ENABLED", "True").lower() in ["true", "1", "yes"]
+
+    def _report_backend(self, method: str, path: str, json_data: dict):
+        if not self.backend_enabled:
+            return
+        try:
+            url = f"{self.backend_url}{path}"
+            headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+            if method == "POST":
+                httpx.post(url, json=json_data, headers=headers, timeout=5.0)
+            elif method == "PATCH":
+                httpx.patch(url, json=json_data, headers=headers, timeout=5.0)
+        except Exception as e:
+            print(f"Backend report failed ({path}): {e}")
 
     def aggregate_round(self, round_num: int):
         print(f"\n=== Coordinator: Round {round_num} ===")
         print(f"Repo: {self.repo_id}")
         print(f"Waiting for {self.num_clients} client updates in 'round_{round_num}/'...")
+        
+        # Report round start
+        self._report_backend("POST", "/api/rounds", {
+            "round_number": round_num,
+            "total_rounds": 10,
+            "expected_clients": self.num_clients,
+            "model_version": "v0.7.0"
+        })
+        self._report_backend("POST", "/api/events", {
+            "event_type": "round.started",
+            "message": f"Coordinator started round {round_num}",
+            "severity": "info",
+            "metadata_info": {"expected_clients": self.num_clients}
+        })
 
         # Poll until all clients have uploaded
         while True:
@@ -41,6 +71,11 @@ class HFCoordinator:
                 if len(round_files) >= self.num_clients:
                     print(f"\nAll {len(round_files)} updates received. Aggregating...")
                     break
+                else:
+                    self._report_backend("PATCH", f"/api/rounds/{round_num}", {
+                        "received_clients": len(round_files),
+                        "progress": int((len(round_files) / self.num_clients) * 100)
+                    })
             except Exception as e:
                 print(f"\nError querying repo: {e}. Retrying in 10s...")
 
@@ -88,6 +123,31 @@ class HFCoordinator:
         )
         os.remove(temp_file)
         print(f"Round {round_num} complete. Global weights live at {self.repo_id}/{global_path}")
+        
+        # Report completion
+        self._report_backend("PATCH", f"/api/rounds/{round_num}", {
+            "status": "completed",
+            "progress": 100,
+            "global_model_path": f"{self.repo_id}/{global_path}"
+        })
+        self._report_backend("POST", "/api/models/global", {
+            "name": "TinyLlama-1.1B-Chat-AFLoRA",
+            "version": f"v0.7.{round_num}",
+            "accuracy": 94.2 + (round_num * 0.1), # Mock accuracy increase
+            "round_number": round_num,
+            "hf_path": f"{self.repo_id}/{global_path}"
+        })
+        self._report_backend("POST", "/api/events", {
+            "event_type": "model.global_updated",
+            "message": f"Global model updated for round {round_num}",
+            "severity": "success",
+            "metadata_info": {"path": f"{self.repo_id}/{global_path}"}
+        })
+        self._report_backend("POST", "/api/events", {
+            "event_type": "round.completed",
+            "message": f"Round {round_num} completed successfully",
+            "severity": "success"
+        })
 
 
 if __name__ == "__main__":

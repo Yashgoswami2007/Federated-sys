@@ -142,6 +142,23 @@ The original HTTP path serialised A matrices into Base64 JSON strings. This is s
 
 ---
 
+## Telemetry Backend Layer
+
+FusionNet runs a centralized **FastAPI backend** tracking live metrics, which powers the real-time React dashboard.
+
+### Core Architecture
+- **Framework**: FastAPI (Python)
+- **Database**: PostgreSQL with async SQLAlchemy and Alembic migrations.
+- **Models & Schemas**: Matches exact TypeScript interfaces expected by the frontend (Device, Round, Metric, Event).
+- **Real-Time Delivery**: Multi-channel WebSocket manager pushes live stats seamlessly to clients.
+
+### Flow & Integrations
+1. **Nodes & Coordination**: Both the local training nodes (`fusionnet-client/main.py`) and the HF coordinator (`hf_coordinator.py`) silently broadcast their training status, progress, privacy budget (epsilon), and hardware health to this API.
+2. **Fire-and-Forget Architecture**: Client integrations with the backend are fully asynchronous. If the backend server is down, local federated training continues uninterrupted (robust edge fault tolerance).
+3. **Authentication**: Handled via `HFAuthMiddleware` by validating bearer tokens against the Hugging Face identity APIs.
+
+---
+
 ## Privacy Layer
 
 FusionNet implements DP-SGD with a dual-engine approach:

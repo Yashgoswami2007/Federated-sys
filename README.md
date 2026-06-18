@@ -632,6 +632,14 @@ fusionnet/
 ├── README.md
 ├── .env                           # ⬅️ (gitignored) HF_TOKEN=your_token_here
 ├── docs/
+├── backend/                       # ⬅️ FastAPI Telemetry & Orchestration Backend
+│   ├── main.py                    # Server entry point
+│   ├── config.py                  # Database & token settings
+│   ├── database.py                # Async SQLAlchemy setup
+│   ├── middleware/                # HF authentication
+│   ├── models/                    # DB schemas (Device, Round, Metric, etc.)
+│   ├── routers/                   # REST API routes & WebSocket
+│   └── websocket/                 # Live dashboard broadcasting
 ├── fusionnet-client/              # ⬅️ Local Client PoC Component
 │   ├── README.md
 │   ├── main.py                    # Node CLI entry point (--client-id, --num-clients, --rounds)
@@ -725,7 +733,25 @@ python fusionnet-client/auth.py
 
 The `.env` file is gitignored and will not be committed.
 
-### Step 2 — Run the Coordinator (polls HF Hub and aggregates updates)
+### Step 2 — Start PostgreSQL and the Telemetry Backend
+
+The FusionNet dashboard relies on a FastAPI backend tracking live metrics in PostgreSQL.
+
+1. Start your local PostgreSQL server (`localhost:5432`).
+2. Run database migrations:
+```powershell
+cd backend
+$env:PYTHONPATH="."
+python -m alembic revision --autogenerate -m "Initial schema"
+python -m alembic upgrade head
+```
+3. Start the FastAPI server:
+```powershell
+uvicorn main:app --reload --port 8000
+# Leave this terminal open. The backend runs on http://localhost:8000
+```
+
+### Step 3 — Run the Coordinator (polls HF Hub and aggregates updates)
 
 In a separate terminal, activate the virtual environment and start the coordinator:
 
@@ -735,9 +761,9 @@ In a separate terminal, activate the virtual environment and start the coordinat
 python scripts/hf_coordinator.py --num-clients 2 --rounds 1
 ```
 
-### Step 3 — Launch the Clients
+### Step 4 — Launch the Clients
 
-In another terminal, run the multi-client launcher to start local client training:
+In another terminal, run the multi-client launcher to start local client training. They will automatically detect and report telemetry to the backend at `http://localhost:8000`.
 
 ```powershell
 # From repo root

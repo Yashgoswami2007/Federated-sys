@@ -1,5 +1,6 @@
 import yaml
 import os
+import sys
 import torch
 from models.loader import load_llama
 from aflora.injection import inject_aflora, get_aflora_layers
@@ -16,6 +17,14 @@ class FusionNetClient:
 
         self.client_id = client_id
         print(f"Initializing FusionNet Client (node {client_id})...")
+        self.backend = None # Will be set by main.py
+        
+        # Determine device profile info for registration
+        self.device_profile_info = {
+            "os": os.name,
+            "python_version": sys.version.split(" ")[0],
+            "hardware_tier": "cpu"
+        }
 
         # Load model
         self.model, self.tokenizer, self.device_profile = load_llama(
@@ -32,6 +41,8 @@ class FusionNetClient:
         target_modules = self.config["federation"].get("target_modules", ["q_proj", "v_proj"])
         injected = inject_aflora(self.model, target_modules, self.rank)
         print(f"Injected AFLoRA into {injected} modules.")
+        self.device_profile_info["hardware_tier"] = self.device_profile
+        self.device_profile_info["lora_rank"] = self.rank
 
         # Device
         self.device = torch.device(
@@ -48,7 +59,8 @@ class FusionNetClient:
         )
         self.fed_client.load_local_adapter()
 
-    def train(self, num_clients: int = 10):
+    def train(self, num_clients: int = 10, round_num: int = 1):
+        import time
         train_dataset, _ = get_dataset(
             self.config["dataset"],
             self.tokenizer,
@@ -65,10 +77,33 @@ class FusionNetClient:
         epochs = self.config["federation"].get("local_epochs", 1)
         for epoch in range(epochs):
             print(f"Epoch {epoch + 1}/{epochs}")
+            start_time = time.time()
             loss = train_local_epoch(
                 self.model, dataloader, optimizer, self.device,
                 self.config["federation"], privacy_engine,
             )
+            duration = time.time() - start_time
             print(f"Epoch {epoch + 1} done. Avg Loss: {loss:.4f}")
+            
+            # Report metrics
+            if self.backend and self.backend.enabled:
+                epsilon = 0.0
+                if privacy_engine:
+                    try:
+                        epsilon = privacy_engine.get_epsilon(delta=1e-5)
+                    except:
+                        pass
+                
+                self.backend.report_metrics(
+                    client_id=f"client_{self.client_id}",
+                    round_num=round_num,
+                    epoch=epoch + 1,
+                    metrics={
+                        "avg_loss": float(loss),
+                        "training_duration_s": duration,
+                        "data_size": len(train_dataset),
+                        "epsilon_spent": float(epsilon)
+                    }
+                )
 
         self.fed_client.save_local_adapter()
