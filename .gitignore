@@ -50,6 +50,9 @@ coverage.xml
 # Environments
 .env
 .venv
+.pip-cache/
+.uv-cache/
+.uv-python/
 env/
 venv/
 ENV/
