@@ -23,13 +23,18 @@ class FLCoordinator:
     def extract_local_weights(self):
         """
         Extracts the trainable weights (LoRA adapter) to send to the server.
+        
+        Uses named_parameters() instead of state_dict() because state_dict
+        values can lose their requires_grad flag in some PyTorch versions.
         """
         print("Extracting local LoRA weights...")
-        # Get only the trainable parameters (LoRA)
-        state_dict = self.model.state_dict()
         trainable_state_dict = {
-            k: v.cpu() for k, v in state_dict.items() if v.requires_grad
+            name: param.detach().cpu()
+            for name, param in self.model.named_parameters()
+            if param.requires_grad
         }
+        if not trainable_state_dict:
+            print("WARNING: No trainable parameters found. Check LoRA injection.")
         return trainable_state_dict
 
     def start_round(self, global_weights, local_dataloader, epochs=1, dp_epsilon=1.0, dp_delta=1e-5, max_grad_norm=1.0):

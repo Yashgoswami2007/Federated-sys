@@ -108,14 +108,16 @@ Client                                  HF Hub repo                      Coordin
   │                                         │                                 │
   │── train locally ──────────────────────▶ │                                 │
   │   upload round_N/client_K.pt ─────────▶ │                                 │
-  │                                         │◀── poll list_repo_files ────────│
-  │                                         │    (wait for all N clients)     │
+  │   (includes data_size metadata)         │◀── poll list_repo_files ────────│
+  │                                         │    (wait for --min-clients)     │
   │                                         │── download all round_N/*.pt ───▶│
-  │                                         │                                 │── FedAvg ──▶
+  │                                         │                                 │── Weighted FedAvg ─▶
   │                                         │◀── upload global/Global_A_N.pt ─│
   │◀── download global/Global_A_N.pt ───────│                                 │
   │    load_global_A() into AFLoRA layers   │                                 │
 ```
+
+**Fault Tolerance & Weighted Aggregation:** The coordinator utilizes a timeout mechanism (`--timeout`) to prevent deadlocks if a client drops offline. It aggregates available matrices once `--min-clients` is reached. Crucially, the coordinator now performs **Data-Size Weighted FedAvg** by parsing the `data_size` metadata attached to each client's upload, ensuring that nodes with more local data exert a proportional influence on the global model.
 
 ### File layout in repo
 
@@ -174,6 +176,19 @@ FusionNet implements DP-SGD with a dual-engine approach:
 2. **Fallback**: Custom `CustomPrivacyEngine` — same interface, used when Opacus hooks fail on dynamically quantized 4-bit modules (common on ROCm backends). Calls `clip → noise → step → zero_grad` in sequence.
 
 Both engines guarantee (ε, δ)-differential privacy with `ε ≤ 1.0` and `δ ≤ 1e-5` as default targets.
+
+### Privacy Budget Accountant
+FusionNet includes a robust `PrivacyAccountant` (`federation/privacy.py`) that strictly tracks the cumulative privacy budget (epsilon, ε) consumed across multiple federated rounds.
+- The accountant persists the total spent budget to disk (`privacy_state.json`), ensuring it survives client restarts.
+- Before each round begins, the system verifies if there is sufficient budget remaining.
+- If the total privacy cap (e.g., `target_epsilon: 10.0`) is exhausted, the accountant throws a `PrivacyBudgetExceeded` exception, immediately halting local training to preserve mathematical privacy guarantees.
+
+---
+
+## Configuration & Stability
+
+To ensure stability across distributed edge nodes, FusionNet employs strict **Pydantic Configuration Validation** (`config_schema.py`). 
+At startup, `client.py` validates the `config.yaml` file against the schema, verifying types, allowed values (e.g., `quantization_type in {"nf4", "none"}`), and ranges (e.g., `lora_rank >= 1`). This fail-fast mechanism prevents nodes from crashing mid-training due to misconfiguration. Furthermore, all core client operations utilize structured `logging` instead of `print()` statements for easier monitoring and parsing.
 
 ---
 

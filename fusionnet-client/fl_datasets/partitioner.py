@@ -1,5 +1,8 @@
 import numpy as np
+import logging
 from torch.utils.data import Subset
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Device-Tier → Data Partition Configuration
@@ -136,23 +139,24 @@ def describe_partition(subset: Subset, dataset, num_classes: int = None) -> dict
 def print_partition_report(device_tier: str, subset: Subset, dataset) -> None:
     """
     Prints a human-readable partition report for demo/judge visibility.
+    Using logger.info instead of print to maintain structured logging.
     """
     cfg  = TIER_PARTITION_CONFIG.get(device_tier, TIER_PARTITION_CONFIG[_DEFAULT_TIER])
     info = describe_partition(subset, dataset)
 
-    print("\n" + "-" * 60)
-    print(f"  DATA PARTITION REPORT  |  Tier: {device_tier}")
-    print("-" * 60)
-    print(f"  Profile     : {cfg['description']}")
-    print(f"  alpha (Dirichlet): {cfg['alpha']}  |  Max fraction: {cfg['data_fraction'] * 100:.0f}% of corpus")
-    print(f"  Shard size  : {info['total_samples']} samples")
-    print(f"  Dominant label: #{info['dominant_label']}")
-    print(f"  Label spread: {len(info['label_counts'])} unique classes in shard")
+    logger.info("-" * 60)
+    logger.info(f"  DATA PARTITION REPORT  |  Tier: {device_tier}")
+    logger.info("-" * 60)
+    logger.info(f"  Profile     : {cfg['description']}")
+    logger.info(f"  alpha (Dirichlet): {cfg['alpha']}  |  Max fraction: {cfg['data_fraction'] * 100:.0f}% of corpus")
+    logger.info(f"  Shard size  : {info['total_samples']} samples")
+    logger.info(f"  Dominant label: #{info['dominant_label']}")
+    logger.info(f"  Label spread: {len(info['label_counts'])} unique classes in shard")
 
     # Simple ASCII bar chart of top-5 labels
     top5 = sorted(info["label_fractions"].items(), key=lambda x: -x[1])[:5]
-    print("\n  Top-5 label distribution:")
+    logger.info("  Top-5 label distribution:")
     for label, frac in top5:
         bar = "#" * int(frac * 40)
-        print(f"    Label {label:>3}: {bar} {frac * 100:.1f}%")
-    print("-" * 60 + "\n")
+        logger.info(f"    Label {label:>3}: {bar} {frac * 100:.1f}%")
+    logger.info("-" * 60)

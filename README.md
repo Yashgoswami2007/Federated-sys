@@ -709,10 +709,24 @@ During development and live testing, several issues were identified and resolved
     - Replaced component-specific WebSocket client connections with a unified `useWebSocket` Context that establishes a single, shared connection to `/ws/all` on the backend, handling auto-reconnection and client registry events.
 13. **WebSocket Heartbeat & Safety Limits (`backend/websocket/manager.py`, `backend/routers/ws.py`)**:
     - Implemented a 100-connection limit check and updated message broadcasting to use `asyncio.gather` for true concurrency. Added a 30-second ping/pong validation loop that terminates idle, stale connections.
-14. **Enforced Registration Enum & Fallbacks (`backend/routers/devices.py`)**:
-    - Enforced strict registration validation for `hardware_type` using a Pydantic `HardwareType` Enum and implemented a coordinates fallback to `(50, 50)` for custom or unknown regions.
 15. **AFLoRA Device Caching & nn.ModuleList Support**:
     - Cached the device/dtype cast of frozen parameters (like `self.A`) inside `AFLoRALayer` to remove redundant casting overhead on forward passes. Enhanced `inject_aflora` to properly replace child elements inside `nn.ModuleList` and `nn.ModuleDict` via key/index assignment instead of `setattr`.
+16. **Data-Size Weighted FedAvg**:
+    - `hf_coordinator.py` now receives dataset sizes from clients and performs properly weighted averaging, meaning a large dataset client correctly has more influence than a tiny one.
+17. **DP-SGD Orchestration Fix**:
+    - Fixed the `Opacus` interaction in `training/engine.py` so gradient clipping and noise addition actually execute properly.
+18. **LoRA Weight Extraction Reliability**:
+    - Replaced `state_dict` checks with `named_parameters` in the coordinator and client extractors to ensure weights aren't silently dropped due to PyTorch `requires_grad` stripping.
+19. **Coordinator Timeouts & Stability**:
+    - The `hf_coordinator.py` now supports `--timeout` and `--min-clients` to prevent endless deadlocks if a client node goes down mid-round.
+20. **Pydantic Configuration Validation**:
+    - Added `config_schema.py` to validate `config.yaml` values dynamically on load, preventing the system from crashing hours into training due to typos.
+21. **Structured Logging Migration**:
+    - Migrated the entire client from standard `print()` statements to Python `logging` for robust edge-node monitoring.
+22. **Privacy Budget Accountant**:
+    - Built a robust `PrivacyAccountant` in `federation/privacy.py` that tracks cumulative epsilon (ε) across rounds, persists it to disk, and throws hard stops if the system exceeds its total privacy budget.
+23. **Tempfile Uploads**:
+    - Fixed race conditions and orphaned file issues during HuggingFace Hub uploads by adopting OS-level temporary files (`tempfile.NamedTemporaryFile`).
 
 ---
 

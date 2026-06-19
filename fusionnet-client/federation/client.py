@@ -1,7 +1,10 @@
 import os
 import torch
+import logging
 from aflora.injection import get_aflora_layers
 from federation.hf_hub import HFParameterServer
+
+logger = logging.getLogger(__name__)
 
 class FederatedClient:
     def __init__(self, client_id, model, config, checkpoint_dir="checkpoints"):
@@ -22,7 +25,7 @@ class FederatedClient:
         os.makedirs(checkpoint_dir, exist_ok=True)
         
     def register_client(self):
-        print(f"Client {self.client_id} registered.")
+        logger.info(f"Client {self.client_id} registered.")
         
     def receive_global_A(self, round_num):
         """
@@ -30,7 +33,7 @@ class FederatedClient:
         Returns True if successful, False if the global weights are not ready yet.
         """
         if not self.hf_server:
-            print("HF Hub not configured. Skipping global A sync.")
+            logger.warning("HF Hub not configured. Skipping global A sync.")
             return False
             
         global_tensors = self.hf_server.download_global_A_matrices(round_num)
@@ -43,9 +46,13 @@ class FederatedClient:
                 layers[i].load_global_A(a_tensor)
         return True
                 
-    def export_A_update(self, round_num):
+    def export_A_update(self, round_num, data_size: int = 0):
         """
         Exports the A matrices from the local model and pushes them to the HF Hub.
+        
+        Args:
+            round_num: Current federation round number.
+            data_size: Number of training samples this client used (for weighted FedAvg).
         """
         layers = get_aflora_layers(self.model)
         updates = []
@@ -54,9 +61,9 @@ class FederatedClient:
             updates.append(a_tensor.cpu())
             
         if self.hf_server:
-            self.hf_server.upload_local_A_matrices(round_num, self.client_id, updates)
+            self.hf_server.upload_local_A_matrices(round_num, self.client_id, updates, data_size=data_size)
         else:
-            print("HF Hub not configured. Update not synced.")
+            logger.warning("HF Hub not configured. Update not synced.")
             
         return updates
         
@@ -74,7 +81,7 @@ class FederatedClient:
             
         torch.save(b_state, os.path.join(self.checkpoint_dir, "local_B.pt"))
         torch.save(lambda_state, os.path.join(self.checkpoint_dir, "local_lambda.pt"))
-        print("Saved local adapter weights (B and Lambda).")
+        logger.info("Saved local adapter weights (B and Lambda).")
         
     def load_local_adapter(self):
         b_path = os.path.join(self.checkpoint_dir, "local_B.pt")
@@ -89,6 +96,6 @@ class FederatedClient:
                 with torch.no_grad():
                     layer.B.copy_(b_state[f"layer_{i}"].to(layer.B.device))
                     layer.Lambda.copy_(lambda_state[f"layer_{i}"].to(layer.Lambda.device))
-            print("Loaded local adapter weights.")
+            logger.info("Loaded local adapter weights.")
         else:
-            print("No local adapter weights found, starting fresh.")
+            logger.info("No local adapter weights found, starting fresh.")

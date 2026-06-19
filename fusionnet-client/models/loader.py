@@ -1,6 +1,9 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 import psutil
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Federation model constant — must match config.yaml across ALL nodes.
 # TinyLlama-1.1B shares the Llama transformer architecture so AFLoRA injection
@@ -39,7 +42,7 @@ class DeviceDetector:
 
         else:
             sys_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
-            print(f"No GPU detected. CPU-only mode. System RAM: {sys_ram_gb:.1f} GB")
+            logger.info(f"No GPU detected. CPU-only mode. System RAM: {sys_ram_gb:.1f} GB")
             return "CPU_only", "cpu"
 
 
@@ -66,15 +69,15 @@ def load_model(model_name: str = None, quantization_type: str = "nf4"):
         model_name = FEDERATION_MODEL_ID
 
     if model_name != FEDERATION_MODEL_ID:
-        print(
-            f"[WARNING] config model.name is '{model_name}' but federation requires "
+        logger.warning(
+            f"config model.name is '{model_name}' but federation requires "
             f"'{FEDERATION_MODEL_ID}'. Overriding to maintain aggregation compatibility."
         )
         model_name = FEDERATION_MODEL_ID
 
     device_profile, device_type = DeviceDetector.detect_hardware()
-    print(f"Hardware profile : {device_profile} | Device : {device_type}")
-    print(f"Loading model    : {model_name}")
+    logger.info(f"Hardware profile : {device_profile} | Device : {device_type}")
+    logger.info(f"Loading model    : {model_name}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     if tokenizer.pad_token is None:
@@ -91,9 +94,9 @@ def load_model(model_name: str = None, quantization_type: str = "nf4"):
                 bnb_4bit_quant_type=quantization_type,
                 bnb_4bit_use_double_quant=True,
             )
-            print("4-bit NF4 quantization config ready (bitsandbytes).")
+            logger.info("4-bit NF4 quantization config ready (bitsandbytes).")
         except Exception as e:
-            print(f"[WARNING] bitsandbytes unavailable ({e}). Falling back to FP16 unquantized on GPU.")
+            logger.warning(f"bitsandbytes unavailable ({e}). Falling back to FP16 unquantized on GPU.")
             quantization_config = None
             use_4bit = False
 
@@ -107,10 +110,10 @@ def load_model(model_name: str = None, quantization_type: str = "nf4"):
         # Verify model is on GPU; if not (e.g. device_map failed silently), force it.
         first_param_device = next(model.parameters()).device
         if first_param_device.type != "cuda":
-            print(f"[WARNING] Model loaded on {first_param_device} — forcing to CUDA.")
+            logger.warning(f"Model loaded on {first_param_device} — forcing to CUDA.")
             model = model.cuda()
         else:
-            print(f"Model loaded on {first_param_device} (GPU confirmed)")
+            logger.info(f"Model loaded on {first_param_device} (GPU confirmed)")
 
     else:
         # ── CPU path: FP32, no quantization ──────────────────────────────────
@@ -122,7 +125,7 @@ def load_model(model_name: str = None, quantization_type: str = "nf4"):
             torch_dtype=torch.float32,
             device_map=None,
         )
-        print("Model loaded on CPU (no GPU available).")
+        logger.info("Model loaded on CPU (no GPU available).")
 
     # Freeze base model — only AFLoRA B and Lambda matrices will be trained.
     for param in model.parameters():

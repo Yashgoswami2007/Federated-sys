@@ -1,8 +1,16 @@
 import argparse
 import sys
 import os
+import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+# Configure structured logging for the main entry point
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("fusionnet_main")
 
 if __name__ == "__main__":
     # Authenticate with HF before anything else
@@ -35,27 +43,25 @@ if __name__ == "__main__":
     client.fed_client.register_client()
 
     for round_num in range(1, args.rounds + 1):
-        print(f"\n{'='*50}")
-        print(f"  FEDERATED ROUND {round_num}/{args.rounds}")
-        print(f"{'='*50}")
+        logger.info(f"========== FEDERATED ROUND {round_num}/{args.rounds} ==========")
 
         # Step 1: pull latest global A matrices (skip on round 1 — none exist yet)
         if round_num > 1:
-            print(f"[Round {round_num}] Downloading global A matrices...")
+            logger.info(f"[Round {round_num}] Downloading global A matrices...")
             success = client.fed_client.receive_global_A(round_num - 1)
             if not success:
-                print(f"[Round {round_num}] No global weights found — continuing with local state.")
+                logger.warning(f"[Round {round_num}] No global weights found — continuing with local state.")
 
         # Step 2: local training
-        print(f"[Round {round_num}] Starting local training...")
-        client.train(num_clients=args.num_clients, round_num=round_num)
+        logger.info(f"[Round {round_num}] Starting local training...")
+        data_size = client.train(num_clients=args.num_clients, round_num=round_num)
 
-        # Step 3: push local A update to HF Hub
-        print(f"[Round {round_num}] Exporting A matrices to HF Hub...")
-        updates = client.fed_client.export_A_update(round_num=round_num)
-        print(f"[Round {round_num}] Pushed {len(updates)} A matrices.")
+        # Step 3: push local A update to HF Hub (with data_size for weighted FedAvg)
+        logger.info(f"[Round {round_num}] Exporting A matrices to HF Hub...")
+        updates = client.fed_client.export_A_update(round_num=round_num, data_size=data_size)
+        logger.info(f"[Round {round_num}] Pushed {len(updates)} A matrices (data_size={data_size}).")
         if backend.enabled:
             backend.update_round(round_num, received_clients=1)  # Simplified: coordinator should really track this
             backend.report_event("client.uploaded", f"Client {args.client_id} uploaded weights for round {round_num}")
 
-    print("\nAll rounds complete. FusionNet client finished.")
+    logger.info("All rounds complete. FusionNet client finished.")

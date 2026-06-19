@@ -32,9 +32,12 @@ def get_dataset(config, tokenizer, device_tier: str = "CPU_only", client_id: int
     # Set per-client cache directory to avoid race conditions
     cache_dir = f".cache/client_{client_id}"
     import os
+    import logging
     os.makedirs(cache_dir, exist_ok=True)
+    
+    logger = logging.getLogger(__name__)
 
-    print(f"Loading dataset: {dataset_name} into {cache_dir}")
+    logger.info(f"Loading dataset: {dataset_name} into {cache_dir}")
     if dataset_name == "banking77":
         raw_dataset = load_dataset("banking77", cache_dir=cache_dir)
     elif dataset_name == "sst2":

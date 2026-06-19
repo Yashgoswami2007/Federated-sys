@@ -1,12 +1,16 @@
+import logging
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from aflora.injection import get_aflora_parameters
 from federation.privacy import setup_privacy, CustomPrivacyEngine
 
+logger = logging.getLogger(__name__)
+
 def train_local_epoch(model, dataloader, optimizer, device, config, privacy_engine=None):
     model.train()
     total_loss = 0
+    num_batches = 0
     
     progress_bar = tqdm(dataloader, desc="Local Training")
     for batch in progress_bar:
@@ -26,19 +30,24 @@ def train_local_epoch(model, dataloader, optimizer, device, config, privacy_engi
         
         if privacy_engine:
             if isinstance(privacy_engine, CustomPrivacyEngine):
+                # CustomPrivacyEngine.step() clips gradients, adds noise,
+                # and calls optimizer.step() internally.
                 privacy_engine.step()
-                optimizer.zero_grad()
             else:
-                # Fix DP-SGD accumulation bug for Opacus
-                privacy_engine.step()
-                optimizer.zero_grad()
+                # Opacus wraps the optimizer during make_private_with_epsilon(),
+                # so stepping the optimizer triggers DP-SGD (per-sample gradient
+                # clipping + calibrated noise) automatically.
+                optimizer.step()
         else:
             optimizer.step()
             
         total_loss += loss.item()
-        progress_bar.set_postfix(loss=loss.item())
-        
-    return total_loss / len(dataloader)
+        num_batches += 1
+        progress_bar.set_postfix(loss=f"{loss.item():.4f}")
+
+    avg_loss = total_loss / max(num_batches, 1)
+    logger.info(f"Epoch complete. Average loss: {avg_loss:.4f} over {num_batches} batches")
+    return avg_loss
 
 def setup_training(model, train_dataset, config):
     batch_size = config.get("batch_size", 4)
