@@ -6,7 +6,7 @@ class AFLoRALayer(nn.Module):
     """
     Adaptive Federated LoRA Layer.
     ΔW = A × Λ × B
-    A is the global shared matrix (frozen during local train).
+    A is the global shared matrix (trained locally, aggregated globally).
     Λ is the local trainable diagonal matrix.
     B is the local trainable matrix.
     """
@@ -26,7 +26,7 @@ class AFLoRALayer(nn.Module):
         self.scaling = alpha / rank
         
         # A: Global Shared Matrix (out_features x rank)
-        self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=False)
+        self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=True)
         # B: Local Trainable Matrix (rank x in_features)
         self.B = nn.Parameter(torch.empty(rank, self.in_features), requires_grad=True)
         # Λ: Local Diagonal Matrix (rank)
@@ -62,10 +62,8 @@ class AFLoRALayer(nn.Module):
         device = x.device
         dtype  = x.dtype
         
-        # self.A is frozen (requires_grad=False), so we can cache its device/dtype cast safely
-        if not hasattr(self, "_cached_A") or self._cached_A.device != device or self._cached_A.dtype != dtype:
-            self._cached_A = self.A.to(device=device, dtype=dtype)
-        A = self._cached_A
+        # A is now trainable, so we cast it directly like B and Lambda
+        A      = self.A.to(device=device, dtype=dtype)
         
         B      = self.B.to(device=device, dtype=dtype)
         Lambda = self.Lambda.to(device=device, dtype=dtype)

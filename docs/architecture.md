@@ -195,5 +195,5 @@ At startup, `client.py` validates the `config.yaml` file against the schema, ver
 ## AFLoRA Client Performance Optimization
 
 To resolve client-side federated learning bottlenecks on hardware:
-1. **Casting Caching**: Since the global `self.A` parameter is frozen during training (`requires_grad=False`), its device/dtype casting (`.to(device, dtype)`) is cached dynamically on the forward pass, avoiding redundant and costly conversions during training loops.
+1. **Trainable A Matrix**: The global `self.A` parameter is now fully trainable locally alongside `B` and `Lambda`. This ensures the exported `A` matrices carry the true client learning signal to the coordinator, while personalization matrices (`B` and `Lambda`) remain secure on the device.
 2. **ModuleList Recursion**: Injected adapters now correctly target and replace linear layers within PyTorch `nn.ModuleList` and `nn.ModuleDict` modules by executing key/index-based assignments (`model[int(name)] = aflora_layer`) instead of `setattr`.
