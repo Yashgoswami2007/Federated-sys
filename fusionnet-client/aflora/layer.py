@@ -6,9 +6,9 @@ class AFLoRALayer(nn.Module):
     """
     Adaptive Federated LoRA Layer.
     ΔW = A × Λ × B
-    A is the global shared matrix (frozen during local train).
-    Λ is the local trainable diagonal matrix.
-    B is the local trainable matrix.
+    A is the global shared matrix trained locally and uploaded for federation.
+    Λ is the local trainable diagonal matrix that stays on device.
+    B is the local trainable matrix that stays on device.
     """
     def __init__(self, base_layer, rank, alpha=16):
         super().__init__()
@@ -25,8 +25,8 @@ class AFLoRALayer(nn.Module):
         self.rank = rank
         self.scaling = alpha / rank
         
-        # A: Global Shared Matrix (out_features x rank)
-        self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=False)
+        # A: Global shared matrix. It is trained locally, then exported for FedAvg.
+        self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=True)
         # B: Local Trainable Matrix (rank x in_features)
         self.B = nn.Parameter(torch.empty(rank, self.in_features), requires_grad=True)
         # Λ: Local Diagonal Matrix (rank)
@@ -61,12 +61,7 @@ class AFLoRALayer(nn.Module):
         # (needed when bitsandbytes places base layers on CUDA but parameters default to CPU)
         device = x.device
         dtype  = x.dtype
-        
-        # self.A is frozen (requires_grad=False), so we can cache its device/dtype cast safely
-        if not hasattr(self, "_cached_A") or self._cached_A.device != device or self._cached_A.dtype != dtype:
-            self._cached_A = self.A.to(device=device, dtype=dtype)
-        A = self._cached_A
-        
+        A      = self.A.to(device=device, dtype=dtype)
         B      = self.B.to(device=device, dtype=dtype)
         Lambda = self.Lambda.to(device=device, dtype=dtype)
 
@@ -78,4 +73,3 @@ class AFLoRALayer(nn.Module):
         lora_out = torch.nn.functional.linear(lora_Lambda_out, A)
 
         return base_out + lora_out * self.scaling
-

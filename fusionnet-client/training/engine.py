@@ -55,8 +55,9 @@ def setup_training(model, train_dataset, config):
     
     dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     
-    b_params, lambda_params = get_aflora_parameters(model)
+    a_params, b_params, lambda_params = get_aflora_parameters(model)
     optimizer = torch.optim.AdamW([
+        {'params': a_params, 'lr': lr},
         {'params': b_params, 'lr': lr},
         {'params': lambda_params, 'lr': lr}
     ])

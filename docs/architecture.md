@@ -192,8 +192,17 @@ At startup, `client.py` validates the `config.yaml` file against the schema, ver
 
 ---
 
-## AFLoRA Client Performance Optimization
+## AFLoRA Federated Parameter Contract
 
-To resolve client-side federated learning bottlenecks on hardware:
-1. **Casting Caching**: Since the global `self.A` parameter is frozen during training (`requires_grad=False`), its device/dtype casting (`.to(device, dtype)`) is cached dynamically on the forward pass, avoiding redundant and costly conversions during training loops.
-2. **ModuleList Recursion**: Injected adapters now correctly target and replace linear layers within PyTorch `nn.ModuleList` and `nn.ModuleDict` modules by executing key/index-based assignments (`model[int(name)] = aflora_layer`) instead of `setattr`.
+AFLoRA uses the adapter math `Delta W = A x Lambda x B`.
+
+Current training contract:
+
+1. **Local training updates A, B, and Lambda**: all three AFLoRA parameters are trainable on each client.
+2. **Only A is federated**: after local training, the client exports/uploads the ordered `A` matrices for aggregation.
+3. **B and Lambda stay local**: the client saves `B` and `Lambda` to `local_B.pt` and `local_lambda.pt`; they are never uploaded or averaged.
+4. **Coordinator aggregates A only**: FedAvg runs layer-by-layer across matching client `A` matrices, then publishes the next global A.
+
+This gives the system a shared global update through `A` while keeping local personalization in `B` and `Lambda`.
+
+Adapter injection also correctly targets and replaces linear layers within PyTorch `nn.ModuleList` and `nn.ModuleDict` modules by executing key/index-based assignments (`model[int(name)] = aflora_layer`) instead of `setattr`.
