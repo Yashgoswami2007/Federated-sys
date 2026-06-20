@@ -9,3 +9,5 @@ websockets
 psycopg2-binary
 httpx
 cachetools
+huggingface_hub
+aiosqlite

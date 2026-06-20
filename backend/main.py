@@ -3,11 +3,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
 import logging
+from backend.database import init_db
 
-from backend.routers import (
-    devices_router, rounds_router, metrics_router,
-    events_router, dashboard_router, models_router, privacy_router
-)
 from backend.routers.ws import router as ws_router
 from backend.middleware import HFAuthMiddleware
 
@@ -32,16 +29,32 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"message": "Internal Server Error"}
     )
 
-app.include_router(devices_router)
-app.include_router(rounds_router)
-app.include_router(metrics_router)
-app.include_router(events_router)
-app.include_router(dashboard_router)
-app.include_router(models_router)
-app.include_router(privacy_router)
+if settings.BACKEND_IN_MEMORY:
+    from backend.routers.in_memory import router as in_memory_router
+
+    logger.warning("BACKEND_IN_MEMORY is enabled; using process-local telemetry storage.")
+    app.include_router(in_memory_router)
+else:
+    from backend.routers import (
+        devices_router, rounds_router, metrics_router,
+        events_router, dashboard_router, models_router, privacy_router
+    )
+
+    app.include_router(devices_router)
+    app.include_router(rounds_router)
+    app.include_router(metrics_router)
+    app.include_router(events_router)
+    app.include_router(dashboard_router)
+    app.include_router(models_router)
+    app.include_router(privacy_router)
 app.include_router(ws_router)
+
+@app.on_event("startup")
+async def startup_event():
+    if settings.BACKEND_AUTO_CREATE_TABLES:
+        logger.warning("BACKEND_AUTO_CREATE_TABLES is enabled; creating missing database tables.")
+        await init_db()
 
 @app.get("/")
 async def root():
     return {"message": "FusionNet Backend API"}
-

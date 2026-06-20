@@ -50,6 +50,9 @@ coverage.xml
 # Environments
 .env
 .venv
+.pip-cache/
+.uv-cache/
+.uv-python/
 env/
 venv/
 ENV/
@@ -81,6 +84,8 @@ datasets/
 outputs/
 checkpoints/
 logs/
+experiments/mvp_sentiment/results/
+*.db
 
 # OS generated files
 .DS_Store
