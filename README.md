@@ -184,7 +184,7 @@ sensitivity = C (gradient clipping norm, e.g., C=1.0)
 Original weight matrix: W ∈ R^(d×k)  [frozen, 4-bit quantized]
 AFLoRA decomposition:   ΔW = A × Λ × B
   Where:
-    A ∈ R^(d×r) = Global shared matrix (participates in federation)
+    A ∈ R^(d×r) = Global shared matrix (trained locally, aggregated globally)
     Λ ∈ R^(r)   = Local trainable diagonal importance matrix
     B ∈ R^(r×k) = Local trainable matrix (remains on device)
 

@@ -193,13 +193,12 @@ At startup, `client.py` validates the `config.yaml` file against the schema, ver
 ---
 
 ## AFLoRA Federated Parameter Contract
-
 AFLoRA uses the adapter math `Delta W = A x Lambda x B`.
 
 Current training contract:
 
 1. **Local training updates A, B, and Lambda**: all three AFLoRA parameters are trainable on each client.
-2. **Only A is federated**: after local training, the client exports/uploads the ordered `A` matrices for aggregation.
+2. **Only A is federated**: after local training, the client exports/uploads the ordered `A` matrices for aggregation. This ensures the exported `A` matrices carry the client learning signal to the coordinator.
 3. **B and Lambda stay local**: the client saves `B` and `Lambda` to `local_B.pt` and `local_lambda.pt`; they are never uploaded or averaged.
 4. **Coordinator aggregates A only**: FedAvg runs layer-by-layer across matching client `A` matrices, then publishes the next global A.
 

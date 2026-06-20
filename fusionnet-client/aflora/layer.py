@@ -6,7 +6,9 @@ class AFLoRALayer(nn.Module):
     """
     Adaptive Federated LoRA Layer.
     ΔW = A × Λ × B
-    A is the global shared matrix trained locally and uploaded for federation.
+
+    A is the global shared matrix trained locally, uploaded for federation,
+    and aggregated globally.
     Λ is the local trainable diagonal matrix that stays on device.
     B is the local trainable matrix that stays on device.
     """
@@ -25,11 +27,12 @@ class AFLoRALayer(nn.Module):
         self.rank = rank
         self.scaling = alpha / rank
         
-        # A: Global shared matrix. It is trained locally, then exported for FedAvg.
+        # A: Global shared matrix (out_features x rank).
+        # Trained locally, then exported for FedAvg.
         self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=True)
-        # B: Local Trainable Matrix (rank x in_features)
+        # B: Local trainable matrix (rank x in_features). Stays on device.
         self.B = nn.Parameter(torch.empty(rank, self.in_features), requires_grad=True)
-        # Λ: Local Diagonal Matrix (rank)
+        # Lambda: Local diagonal scaling vector (rank). Stays on device.
         self.Lambda = nn.Parameter(torch.ones(rank), requires_grad=True)
         
         self.reset_parameters()
@@ -61,7 +64,10 @@ class AFLoRALayer(nn.Module):
         # (needed when bitsandbytes places base layers on CUDA but parameters default to CPU)
         device = x.device
         dtype  = x.dtype
+        
+        # A is now trainable, so we cast it directly like B and Lambda
         A      = self.A.to(device=device, dtype=dtype)
+        
         B      = self.B.to(device=device, dtype=dtype)
         Lambda = self.Lambda.to(device=device, dtype=dtype)
 
