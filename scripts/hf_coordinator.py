@@ -52,6 +52,24 @@ class HFCoordinator:
         except Exception as e:
             logger.debug(f"Backend report failed ({path}): {e}")
 
+    def _get_active_client_count(self) -> int:
+        """Dynamically detect the number of active clients from the backend."""
+        if not self.backend_enabled:
+            return self.num_clients
+            
+        try:
+            url = f"{self.backend_url}/api/devices"
+            response = httpx.get(url, timeout=5.0)
+            if response.status_code == 200:
+                devices = response.json()
+                active_count = sum(1 for d in devices if d.get("status") in ["online", "training"])
+                if active_count > 0:
+                    return active_count
+        except Exception as e:
+            logger.debug(f"Failed to fetch active devices from backend: {e}")
+            
+        return self.num_clients
+
     def _parse_client_payload(self, raw_payload):
         """Parse a client upload, handling both old (list) and new (dict) formats.
         
@@ -69,23 +87,23 @@ class HFCoordinator:
             return raw_payload, 1
 
     def aggregate_round(self, round_num: int):
+        initial_expected = self._get_active_client_count()
         logger.info(f"=== Coordinator: Round {round_num} ===")
         logger.info(f"Repo: {self.repo_id}")
-        logger.info(f"Waiting for {self.num_clients} clients (min: {self.min_clients}) "
-                     f"in 'round_{round_num}/' (timeout: {self.timeout_seconds}s)...")
+        logger.info(f"Initial expected clients dynamically set to: {initial_expected} (timeout: {self.timeout_seconds}s)...")
         
         # Report round start
         self._report_backend("POST", "/api/rounds", {
             "round_number": round_num,
             "total_rounds": 10,
-            "expected_clients": self.num_clients,
+            "expected_clients": initial_expected,
             "model_version": "v0.7.0"
         })
         self._report_backend("POST", "/api/events", {
             "event_type": "round.started",
-            "message": f"Coordinator started round {round_num}",
+            "message": f"Coordinator started round {round_num} expecting {initial_expected} clients",
             "severity": "info",
-            "metadata_info": {"expected_clients": self.num_clients}
+            "metadata_info": {"expected_clients": initial_expected}
         })
 
         # Poll until all clients have uploaded OR timeout is reached
@@ -94,6 +112,9 @@ class HFCoordinator:
 
         while True:
             elapsed = time.time() - start_time
+            
+            # Dynamically re-evaluate in case nodes connect/disconnect
+            current_expected = self._get_active_client_count()
 
             try:
                 files = self.api.list_repo_files(repo_id=self.repo_id, repo_type=self.repo_type)
@@ -101,16 +122,16 @@ class HFCoordinator:
                     f for f in files
                     if f.startswith(f"round_{round_num}/") and f.endswith(".pt")
                 ]
-                logger.info(f"  [Status] {len(round_files)}/{self.num_clients} updates received "
+                logger.info(f"  [Status] {len(round_files)}/{current_expected} updates received "
                             f"({elapsed:.0f}s elapsed)")
 
-                if len(round_files) >= self.num_clients:
-                    logger.info(f"All {len(round_files)} updates received. Aggregating...")
+                if len(round_files) >= current_expected and current_expected > 0:
+                    logger.info(f"All {len(round_files)} active expected updates received. Aggregating...")
                     break
 
                 self._report_backend("PATCH", f"/api/rounds/{round_num}", {
                     "received_clients": len(round_files),
-                    "progress": int((len(round_files) / self.num_clients) * 100)
+                    "progress": int((len(round_files) / current_expected) * 100) if current_expected > 0 else 0
                 })
 
             except Exception as e:
@@ -118,28 +139,30 @@ class HFCoordinator:
 
             # Check timeout
             if elapsed >= self.timeout_seconds:
-                if len(round_files) >= self.min_clients:
+                # If we have at least 1 file, we can proceed on timeout
+                current_min = self.min_clients if self.min_clients else 1
+                if len(round_files) >= current_min and len(round_files) > 0:
                     logger.warning(
                         f"Timeout reached ({self.timeout_seconds}s). "
-                        f"Proceeding with {len(round_files)}/{self.num_clients} clients "
-                        f"(meets min_clients={self.min_clients})."
+                        f"Proceeding with {len(round_files)}/{current_expected} clients "
+                        f"(meets min_clients={current_min})."
                     )
                     self._report_backend("POST", "/api/events", {
                         "event_type": "round.timeout",
-                        "message": f"Round {round_num} timed out with {len(round_files)}/{self.num_clients} clients",
+                        "message": f"Round {round_num} timed out with {len(round_files)}/{current_expected} clients",
                         "severity": "warning",
-                        "metadata_info": {"received": len(round_files), "expected": self.num_clients}
+                        "metadata_info": {"received": len(round_files), "expected": current_expected}
                     })
                     break
                 else:
                     logger.error(
                         f"Timeout reached ({self.timeout_seconds}s) with only "
-                        f"{len(round_files)}/{self.min_clients} minimum clients. "
+                        f"{len(round_files)}/{current_min} minimum clients. "
                         f"Skipping round {round_num}."
                     )
                     self._report_backend("POST", "/api/events", {
                         "event_type": "round.failed",
-                        "message": f"Round {round_num} failed: insufficient clients ({len(round_files)}/{self.min_clients})",
+                        "message": f"Round {round_num} failed: insufficient clients ({len(round_files)}/{current_min})",
                         "severity": "error"
                     })
                     return  # Skip this round
