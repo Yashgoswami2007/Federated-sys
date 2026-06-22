@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import pickle
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -22,6 +23,9 @@ try:
     import torch
 except ModuleNotFoundError:
     torch = None
+
+class RoundTimeoutError(RuntimeError):
+    pass
 
 if torch is not None:
     from fusionnet.core.aggregator import fed_avg as torch_fed_avg
@@ -87,6 +91,24 @@ class LocalCommunicationBackend:
     def prepare(self) -> None:
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.client_updates_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Recover state from disk if exists
+        for file_path in self.client_updates_dir.glob("round_*.pt"):
+            try:
+                data = load_artifact(file_path)
+                update = ClientUpdate(
+                    client_id=data["client_id"],
+                    round_num=data["round"],
+                    num_samples=data["num_samples"],
+                    hardware_tier=data["hardware_tier"],
+                    weights=data["weights"],
+                    metrics=data["metrics"],
+                )
+                updates = self.updates_by_round.setdefault(update.round_num, [])
+                if not any(existing.client_id == update.client_id for existing in updates):
+                    updates.append(update)
+            except Exception as e:
+                print(f"Warning: Failed to load artifact {file_path}: {e}")
 
     def start_round(self, round_num: int, global_weights: dict[str, Any]) -> None:
         self.prepare()
@@ -122,17 +144,29 @@ class LocalCommunicationBackend:
             },
         )
 
-    def wait_for_updates(self, round_num: int) -> list[ClientUpdate]:
+    def wait_for_updates(self, round_num: int, timeout_sec: float = 60.0, min_clients: int | None = None) -> list[ClientUpdate]:
+        if min_clients is None:
+            min_clients = self.expected_clients
+            
+        start_time = time.time()
+        while time.time() - start_time < timeout_sec:
+            updates = self.updates_by_round.get(round_num, [])
+            if len(updates) >= self.expected_clients:
+                return list(updates)
+            time.sleep(1.0)
+            
         updates = self.updates_by_round.get(round_num, [])
-        if len(updates) != self.expected_clients:
-            raise RuntimeError(
-                f"Round {round_num} expected {self.expected_clients} updates, "
-                f"received {len(updates)}"
-            )
-        return list(updates)
+        if len(updates) >= min_clients:
+            print(f"Warning: Timeout reached. Proceeding with partial aggregation ({len(updates)}/{self.expected_clients} clients).")
+            return list(updates)
+            
+        raise RoundTimeoutError(
+            f"Round {round_num} failed: Expected at least {min_clients} updates, "
+            f"but received {len(updates)} before timeout of {timeout_sec}s."
+        )
 
-    def aggregate(self, round_num: int) -> dict[str, Any]:
-        updates = self.wait_for_updates(round_num)
+    def aggregate(self, round_num: int, timeout_sec: float = 60.0, min_clients: int | None = None) -> dict[str, Any]:
+        updates = self.wait_for_updates(round_num, timeout_sec=timeout_sec, min_clients=min_clients)
         client_weights = [update.weights for update in updates]
         client_sizes = [update.num_samples for update in updates]
         global_weights = aggregate_weights(client_weights, client_sizes)
@@ -216,3 +250,10 @@ def save_artifact(payload: Any, path: Path) -> None:
 
     with path.open("wb") as artifact_file:
         pickle.dump(payload, artifact_file)
+
+
+def load_artifact(path: Path) -> Any:
+    if torch is not None:
+        return torch.load(path, weights_only=False)
+    with path.open("rb") as artifact_file:
+        return pickle.load(artifact_file)

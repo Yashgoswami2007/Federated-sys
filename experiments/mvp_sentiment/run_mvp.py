@@ -96,7 +96,7 @@ class LocalCoordinator:
     def prepare_results_dir(self) -> None:
         self.comms.prepare()
 
-    def run(self, rounds: int, adapter_shape: tuple[int, int]) -> dict[str, Any]:
+    def run(self, rounds: int, adapter_shape: tuple[int, int], max_round_retries: int = 3) -> dict[str, Any]:
         self.prepare_results_dir()
         global_weights = {ADAPTER_KEY: zeros(adapter_shape)}
 
@@ -104,16 +104,36 @@ class LocalCoordinator:
         print(f"Clients: {len(self.clients)} | Rounds: {rounds}")
         print("-" * 56)
 
-        for round_num in range(1, rounds + 1):
-            self.comms.start_round(round_num, global_weights)
-            updates = self.collect_client_updates(global_weights, round_num)
-            global_weights = self.comms.aggregate(round_num)
-            print(f"Round {round_num}: aggregated global weights with FedAvg")
-            round_metrics = self.summarize_round(round_num, updates, global_weights)
-            self.metrics.append(round_metrics)
+        from fusionnet.comms.local_backend import RoundTimeoutError
 
-            self.comms.publish_global_update(round_num, global_weights, round_metrics)
-            self.print_round_summary(round_metrics)
+        round_num = 1
+        while round_num <= rounds:
+            success = False
+            for attempt in range(max_round_retries + 1):
+                try:
+                    self.comms.start_round(round_num, global_weights)
+                    updates = self.collect_client_updates(global_weights, round_num)
+                    # Set a timeout for aggregation, e.g., 5 seconds, min_clients = 1
+                    global_weights = self.comms.aggregate(round_num, timeout_sec=5.0, min_clients=1)
+                    print(f"Round {round_num}: aggregated global weights with FedAvg")
+                    round_metrics = self.summarize_round(round_num, updates, global_weights)
+                    self.metrics.append(round_metrics)
+
+                    self.comms.publish_global_update(round_num, global_weights, round_metrics)
+                    self.print_round_summary(round_metrics)
+                    success = True
+                    break
+                except (RoundTimeoutError, RuntimeError) as e:
+                    print(f"Warning: Round {round_num} attempt {attempt+1} failed: {e}")
+                    if attempt < max_round_retries:
+                        print("Retrying round...")
+                        time.sleep(2.0)
+            
+            if not success:
+                print(f"Error: Round {round_num} failed after {max_round_retries + 1} attempts. Aborting simulation.")
+                break
+                
+            round_num += 1
 
         metrics_path = self.comms.write_metrics(self.metrics)
         print(f"Saved metrics to {metrics_path.relative_to(REPO_ROOT)}")
@@ -126,9 +146,13 @@ class LocalCoordinator:
     ) -> list[ClientUpdate]:
         updates = []
         for client in self.clients:
-            update = client.train(global_weights, round_num)
-            self.comms.submit_update(update)
-            updates.append(update)
+            try:
+                update = client.train(global_weights, round_num)
+                self.comms.submit_update(update)
+                updates.append(update)
+            except Exception as e:
+                print(f"Warning: Client {client.profile.client_id} failed during training: {e}")
+                
         print(f"Round {round_num}: received {len(updates)} client updates")
         return updates
 

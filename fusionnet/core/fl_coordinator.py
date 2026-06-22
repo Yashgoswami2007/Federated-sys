@@ -1,3 +1,4 @@
+import time
 import copy
 import torch
 from .lora_trainer import LoRATrainer
@@ -37,7 +38,7 @@ class FLCoordinator:
             print("WARNING: No trainable parameters found. Check LoRA injection.")
         return trainable_state_dict
 
-    def start_round(self, global_weights, local_dataloader, epochs=1, dp_epsilon=1.0, dp_delta=1e-5, max_grad_norm=1.0):
+    def start_round(self, global_weights, local_dataloader, epochs=1, dp_epsilon=1.0, dp_delta=1e-5, max_grad_norm=1.0, retries=3, retry_delay=5.0):
         """
         Executes a single federated learning round locally.
         
@@ -48,6 +49,8 @@ class FLCoordinator:
             dp_epsilon (float): Target DP epsilon budget.
             dp_delta (float): Target DP delta budget.
             max_grad_norm (float): Gradient clipping norm for DP.
+            retries (int): Number of retries in case of failure.
+            retry_delay (float): Delay between retries in seconds.
             
         Returns:
             updated_weights (dict): The locally trained LoRA state_dict.
@@ -58,37 +61,53 @@ class FLCoordinator:
         if global_weights:
             self.apply_global_weights(global_weights)
 
-        # Initialize trainer
-        trainer = LoRATrainer(model=self.model, learning_rate=2e-4)
+        last_exception = None
+        for attempt in range(retries + 1):
+            try:
+                # Initialize trainer
+                trainer = LoRATrainer(model=self.model, learning_rate=2e-4)
 
-        # Enable DP-SGD via Opacus
-        # dp_dataloader is a modified dataloader that Opacus uses to properly track batches/noise
-        dp_dataloader = trainer.enable_dp(
-            data_loader=local_dataloader,
-            target_epsilon=dp_epsilon,
-            target_delta=dp_delta,
-            max_grad_norm=max_grad_norm,
-            epochs=epochs
-        )
+                # Enable DP-SGD via Opacus
+                # dp_dataloader is a modified dataloader that Opacus uses to properly track batches/noise
+                dp_dataloader = trainer.enable_dp(
+                    data_loader=local_dataloader,
+                    target_epsilon=dp_epsilon,
+                    target_delta=dp_delta,
+                    max_grad_norm=max_grad_norm,
+                    epochs=epochs
+                )
 
-        avg_loss = 0.0
-        for epoch in range(epochs):
-            print(f"\nLocal Epoch {epoch+1}/{epochs}")
-            avg_loss = trainer.train_epoch(dp_dataloader)
-            
-        # Extract the new local weights
-        updated_weights = self.extract_local_weights()
-        
-        metrics = {
-            "loss": avg_loss,
-            "data_size": len(local_dataloader.dataset) if hasattr(local_dataloader, 'dataset') else 0
-        }
-        
-        # Add final privacy metrics
-        if trainer.privacy_engine:
-            from .dp_sgd import get_privacy_metrics
-            privacy_metrics = get_privacy_metrics(trainer.privacy_engine, dp_delta)
-            metrics.update(privacy_metrics)
-            
-        print("--- Local FL Round Complete ---")
-        return updated_weights, metrics
+                avg_loss = 0.0
+                for epoch in range(epochs):
+                    print(f"\nLocal Epoch {epoch+1}/{epochs} (Attempt {attempt+1})")
+                    avg_loss = trainer.train_epoch(dp_dataloader)
+                    
+                # Extract the new local weights
+                updated_weights = self.extract_local_weights()
+                
+                metrics = {
+                    "loss": avg_loss,
+                    "data_size": len(local_dataloader.dataset) if hasattr(local_dataloader, 'dataset') else 0
+                }
+                
+                # Add final privacy metrics
+                if trainer.privacy_engine:
+                    from .dp_sgd import get_privacy_metrics
+                    privacy_metrics = get_privacy_metrics(trainer.privacy_engine, dp_delta)
+                    metrics.update(privacy_metrics)
+                    
+                print("--- Local FL Round Complete ---")
+                return updated_weights, metrics
+                
+            except Exception as e:
+                last_exception = e
+                print(f"Warning: Local training attempt {attempt+1} failed with error: {e}")
+                if attempt < retries:
+                    print(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+
+        print(f"Error: Local training failed after {retries + 1} attempts.")
+        if last_exception is not None:
+            raise last_exception
+        raise RuntimeError("Local training failed")
+
