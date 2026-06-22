@@ -21,16 +21,33 @@ if __name__ == "__main__":
     from backend_client import BackendClient
 
     parser = argparse.ArgumentParser(description="FusionNet local client node")
-    parser.add_argument("--client-id",   type=int, default=0,  help="Unique integer ID for this node")
-    parser.add_argument("--num-clients", type=int, default=10, help="Total federation size")
-    parser.add_argument("--rounds",      type=int, default=1,  help="Number of FL rounds to run")
+    parser.add_argument("--client-id",    type=int,  default=0,    help="Unique integer ID for this node")
+    parser.add_argument("--num-clients",  type=int,  default=10,   help="Total federation size")
+    parser.add_argument("--rounds",       type=int,  default=1,    help="Number of FL rounds to run")
+    parser.add_argument("--backend-url",  type=str,  default=None, help="Backend URL (skips LAN discovery if set)")
+    parser.add_argument("--no-discovery", action="store_true",     help="Disable LAN auto-discovery")
     args = parser.parse_args()
 
     client = FusionNetClient("config.yaml", client_id=args.client_id)
-    
-    # Init backend client
-    backend_url = client.config.get("backend", {}).get("url", "http://localhost:8000")
+
+    # ── Resolve backend URL ──────────────────────────────────────────────────
+    # Priority: CLI flag > LAN discovery > config.yaml > localhost fallback
+    config_url      = client.config.get("backend", {}).get("url", "http://localhost:8000")
     backend_enabled = client.config.get("backend", {}).get("enabled", True)
+
+    if args.backend_url:
+        backend_url = args.backend_url
+        logger.info(f"Using backend URL from CLI: {backend_url}")
+    elif not args.no_discovery and backend_enabled:
+        logger.info("Scanning local network for FusionNet coordinator (up to 10s)...")
+        from discovery import find_coordinator
+        backend_url = find_coordinator(timeout=10.0, fallback_url=config_url)
+        logger.info(f"Backend URL resolved to: {backend_url}")
+    else:
+        backend_url = config_url
+        logger.info(f"Using backend URL from config: {backend_url}")
+
+    # ── Init backend client ──────────────────────────────────────────────────
     backend = BackendClient(backend_url, os.getenv("HF_TOKEN"))
     backend.enabled = backend_enabled
     client.backend = backend  # Attach to client for use in training loop

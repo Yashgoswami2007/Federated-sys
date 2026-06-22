@@ -7,3 +7,4 @@ pyyaml>=6.0.1
 tqdm
 numpy>=1.24.0
 python-dotenv>=1.0.0
+zeroconf==0.132.2

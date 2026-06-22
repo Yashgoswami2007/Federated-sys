@@ -142,7 +142,16 @@ but does not stop local training, aggregation, metrics, or artifact writing.
 
 For local MVP testing without PostgreSQL, run the backend in in-memory mode:
 
+```powershell
+# Windows (PowerShell)
+$env:BACKEND_IN_MEMORY = "true"
+$env:BACKEND_AUTH_DISABLED = "true"
+$env:PYTHONPATH = "."
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
 ```bash
+# Linux / WSL2
 BACKEND_IN_MEMORY=true BACKEND_AUTH_DISABLED=true \
   python -m uvicorn backend.main:app --reload --port 8000
 ```
@@ -155,20 +164,20 @@ backend path still uses PostgreSQL.
 
 This flow was verified locally with the in-memory backend mode.
 
-Terminal 1: start the FastAPI backend without PostgreSQL:
+Terminal 1: start the FastAPI backend without PostgreSQL (Windows):
 
-```bash
-cd /home/atlonglastkibet/Desktop/Federated-sys
-source .venv/bin/activate
-BACKEND_IN_MEMORY=true BACKEND_AUTH_DISABLED=true \
-  python -m uvicorn backend.main:app --reload --port 8000
+```powershell
+.\venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "."
+$env:BACKEND_IN_MEMORY = "true"
+$env:BACKEND_AUTH_DISABLED = "true"
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Terminal 2: run the local federated round and report events to the backend:
 
-```bash
-cd /home/atlonglastkibet/Desktop/Federated-sys
-source .venv/bin/activate
+```powershell
+.\venv\Scripts\Activate.ps1
 python experiments/mvp_sentiment/run_mvp.py --rounds 1 --report-backend
 ```
 

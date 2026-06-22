@@ -630,7 +630,8 @@ The local client proof-of-concept has been successfully implemented in the `fusi
 ```
 fusionnet/
 ├── README.md
-├── .env                           # ⬅️ (gitignored) HF_TOKEN=your_token_here
+├── HOW_TO_RUN.md                  # ⬅️ Step-by-step run guide + LAN discovery
+├── .env                           # ⬅️ (gitignored) HF_TOKEN, BACKEND_IN_MEMORY, etc.
 ├── docs/
 ├── backend/                       # ⬅️ FastAPI Telemetry & Orchestration Backend
 │   ├── main.py                    # Server entry point
@@ -638,13 +639,14 @@ fusionnet/
 │   ├── database.py                # Async SQLAlchemy setup
 │   ├── middleware/                # HF authentication
 │   ├── models/                    # DB schemas (Device, Round, Metric, etc.)
-│   ├── routers/                   # REST API routes & WebSocket
+│   ├── routers/                   # REST API routes & WebSocket (incl. in_memory.py)
 │   └── websocket/                 # Live dashboard broadcasting
 ├── fusionnet-client/              # ⬅️ Local Client PoC Component
 │   ├── README.md
-│   ├── main.py                    # Node CLI entry point (--client-id, --num-clients, --rounds)
+│   ├── main.py                    # Node CLI entry point (--client-id, --num-clients, --rounds, --backend-url, --no-discovery)
 │   ├── client.py                  # FusionNetClient orchestrator
 │   ├── auth.py                    # HF authentication (reads HF_TOKEN from .env)
+│   ├── discovery.py               # ⬅️ mDNS LAN auto-discovery (find_coordinator / advertise_coordinator)
 │   ├── config.yaml                # Device & training config
 │   ├── requirements.txt
 │   ├── models/
@@ -666,7 +668,7 @@ fusionnet/
 │       ├── example_train.py
 │       └── example_federated_round.py
 └── scripts/
-    ├── hf_coordinator.py          # ⬅️ Serverless FL coordinator (polls HF Hub, runs FedAvg)
+    ├── hf_coordinator.py          # ⬅️ Serverless FL coordinator (polls HF Hub, runs FedAvg, advertises via mDNS)
     ├── setup_env.ps1              # Windows: one-shot environment setup
     ├── setup_cuda.ps1             # Windows: NVIDIA CUDA setup
     ├── setup_rocm.ps1             # Windows: AMD ROCm (CPU + WSL2 guide)
@@ -732,11 +734,13 @@ During development and live testing, several issues were identified and resolved
 
 ## 🪟 Windows Quick-Start
 
-FusionNet runs natively on Windows. All scripts have `.ps1` (PowerShell) equivalents.
+> For the complete step-by-step guide including LAN/WiFi auto-discovery, see **[HOW_TO_RUN.md](HOW_TO_RUN.md)**.
+
+FusionNet runs natively on Windows. PostgreSQL is **not required** — the backend runs fully in-memory by default.
 
 ### Step 1 — Environment Setup (run once from repo root)
 
-Open PowerShell as Administrator (or standard user if python is globally configured) and run:
+Open PowerShell and run:
 
 ```powershell
 # CPU-only (any Windows PC — works out of the box)
@@ -751,66 +755,76 @@ Open PowerShell as Administrator (or standard user if python is globally configu
 
 ### Step 1.5 — Hugging Face Authentication
 
-Create a `.env` file in the repo root with your HF token (obtain one with write scope at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)):
+Create a `.env` file in the repo root:
 
 ```env
 HF_TOKEN=your_token_here
+HF_REPO_ID=yash-goswami/fusionnet-coordinator
+BACKEND_IN_MEMORY=true
+BACKEND_AUTH_DISABLED=true
 ```
 
-Then authenticate by running (from the repo root):
+Then authenticate:
 
 ```powershell
-# Activate environment and run authentication helper
 .\venv\Scripts\Activate.ps1
 python fusionnet-client/auth.py
 ```
 
-The `.env` file is gitignored and will not be committed.
+### Step 2 — Start the Telemetry Backend
 
-### Step 2 — Start PostgreSQL and the Telemetry Backend
-
-The FusionNet dashboard relies on a FastAPI backend tracking live metrics in PostgreSQL.
-
-1. Start your local PostgreSQL server (`localhost:5432`).
-2. Run database migrations:
 ```powershell
-cd backend
-$env:PYTHONPATH="."
-python -m alembic revision --autogenerate -m "Initial schema"
-python -m alembic upgrade head
-```
-3. Start the FastAPI server:
-```powershell
-uvicorn main:app --reload --port 8000
-# Leave this terminal open. The backend runs on http://localhost:8000
+.\venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "."
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Step 3 — Run the Coordinator (polls HF Hub and aggregates updates)
+`--host 0.0.0.0` makes the backend reachable by edge devices on the same network.
 
-In a separate terminal, activate the virtual environment and start the coordinator:
+> To use PostgreSQL instead of in-memory mode, remove `BACKEND_IN_MEMORY=true` from `.env` and run Alembic migrations first.
+
+### Step 3 — Run the Coordinator
+
+The coordinator advertises itself on the LAN via mDNS so clients on the same WiFi/LAN find it automatically.
 
 ```powershell
-# From repo root
 .\venv\Scripts\Activate.ps1
 python scripts/hf_coordinator.py --num-clients 2 --rounds 1
 ```
 
 ### Step 4 — Launch the Clients
 
-In another terminal, run the multi-client launcher to start local client training. They will automatically detect and report telemetry to the backend at `http://localhost:8000`.
+Multi-client simulation on one machine:
 
 ```powershell
-# From repo root
 powershell -ExecutionPolicy Bypass -Command "& { .\venv\Scripts\Activate.ps1; .\scripts\launch_fl_round.ps1 -NumClients 2 -FederationRounds 1 }"
 ```
 
-To run a single client node manually:
+Single client (auto-discovers coordinator on LAN):
 
 ```powershell
-# Activate venv and run main.py inside fusionnet-client directory
 cd fusionnet-client
 ..\venv\Scripts\Activate.ps1
 python main.py --client-id 0 --num-clients 2 --rounds 1
+```
+
+Override discovery manually:
+
+```powershell
+python main.py --client-id 1 --num-clients 2 --backend-url http://192.168.1.42:8000
+```
+
+### Connecting an Edge Device (Different Machine, Same Network)
+
+1. Copy the repo to the edge device
+2. Add `.env` with `HF_TOKEN`
+3. Run `.\scripts\setup_env.ps1`
+4. Run the client — it finds the coordinator automatically:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+cd fusionnet-client
+python main.py --client-id 1 --num-clients 2 --rounds 1
 ```
 
 ### AMD GPU on Windows — WSL2 Path
@@ -818,10 +832,8 @@ python main.py --client-id 0 --num-clients 2 --rounds 1
 PyTorch ROCm wheels are Linux-only. For full AMD GPU acceleration on Windows:
 
 ```powershell
-# Install WSL2 with Ubuntu 22.04
 wsl --install -d Ubuntu-22.04
-
-# Then inside WSL2
+# Then inside WSL2:
 bash scripts/setup_rocm.sh
 cd fusionnet-client && python main.py --client-id 0 --num-clients 4
 ```
@@ -837,6 +849,7 @@ Always activate the virtual environment (`.\venv\Scripts\Activate.ps1`) before e
 | AMD ROCm setup | `.\scripts\setup_rocm.ps1` | `bash scripts/setup_rocm.sh` |
 | Launch FL round | `.\scripts\launch_fl_round.ps1` | `bash scripts/launch_fl_round.sh` |
 | Run single node | `python main.py --client-id 0` | `python main.py --client-id 0` |
+| LAN discovery off | `python main.py --no-discovery` | `python main.py --no-discovery` |
 
 
 ---

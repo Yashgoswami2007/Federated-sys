@@ -150,14 +150,32 @@ FusionNet runs a centralized **FastAPI backend** tracking live metrics, which po
 
 ### Core Architecture
 - **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL with async SQLAlchemy and Alembic migrations.
+- **Database**: PostgreSQL with async SQLAlchemy and Alembic migrations (optional — see in-memory mode below).
 - **Models & Schemas**: Matches exact TypeScript interfaces expected by the frontend (Device, Round, Metric, Event).
 - **Real-Time Delivery**: Multi-channel WebSocket manager pushes live stats seamlessly to clients.
+
+### In-Memory Mode (No PostgreSQL Required)
+
+For local development and demos, set `BACKEND_IN_MEMORY=true` in `.env`. The backend switches to `backend/routers/in_memory.py`, which stores all state in process memory using plain Python dicts. All REST API routes are identical — the frontend and clients connect the same way.
+
+```env
+BACKEND_IN_MEMORY=true
+BACKEND_AUTH_DISABLED=true
+```
+
+Start the backend with:
+
+```powershell
+$env:PYTHONPATH = "."
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+`--host 0.0.0.0` is required when edge devices on other machines need to reach the backend.
 
 ### Flow & Integrations
 1. **Nodes & Coordination**: Both the local training nodes (`fusionnet-client/main.py`) and the HF coordinator (`hf_coordinator.py`) silently broadcast their training status, progress, privacy budget (epsilon), and hardware health to this API.
 2. **Fire-and-Forget Architecture**: Client integrations with the backend are fully asynchronous. If the backend server is down, local federated training continues uninterrupted (robust edge fault tolerance).
-3. **Authentication**: Handled via `HFAuthMiddleware` by validating bearer tokens against the Hugging Face identity APIs.
+3. **Authentication**: Handled via `HFAuthMiddleware` by validating bearer tokens against the Hugging Face identity APIs. Set `BACKEND_AUTH_DISABLED=true` to bypass for local testing.
 
 ### Hardening & WebSockets Optimization
 - **Unified WebSocket Context**: The frontend dashboard initiates a single connection to the `/ws/all` backend channel via a custom React `useWebSocket` Provider, minimizing network resource footprint. It manages auto-reconnection and parses `device.registered` and `device.heartbeat` events.
