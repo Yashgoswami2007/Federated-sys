@@ -1,0 +1,11 @@
+FusionNet Training Evidence
+========================================
+Timestamp  : 2026-06-24T06:04:29.351107Z
+PyTorch    : 2.11.0+cu128
+AMD ROCm   : No (CUDA/CPU)
+Rounds     : 5
+Clients    : 3
+Duration   : 1.8s
+
+Nodes:
+  GPU [0]: NVIDIA GeForce RTX 5060 Laptop GPU (8.0 GB, CUDA)

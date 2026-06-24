@@ -119,6 +119,43 @@ def fed_median(client_weights_list):
         
     return median_weights
 
-def secure_aggregate(updates):
-    # Stub for Secure Aggregation (MPC) - to be implemented in the future
-    pass
+def secure_aggregate(
+    updates: list,
+    client_data_sizes: list | None = None,
+    method: str = "secure_shares",
+    num_servers: int = 3,
+) -> dict | None:
+    """
+    Secure aggregation dispatcher.
+
+    Args:
+        updates:           List of client state_dicts.
+        client_data_sizes: Number of training samples per client (FedAvg weighting).
+        method:            Aggregation strategy:
+                             - ``"secure_shares"`` — additive secret sharing MPC (default)
+                             - ``"fedavg"``         — plain weighted FedAvg (no MPC)
+                             - ``"median"``         — Byzantine-robust coordinate-wise median
+        num_servers:       Number of MPC servers (only for ``"secure_shares"``).
+
+    Returns:
+        Aggregated state_dict, or None if no valid updates.
+    """
+    if not updates:
+        return None
+
+    if method == "secure_shares":
+        from .secure_agg import secure_aggregate as _mpc_aggregate
+        return _mpc_aggregate(
+            client_updates=updates,
+            client_data_sizes=client_data_sizes,
+            num_servers=num_servers,
+        )
+    elif method == "fedavg":
+        sizes = client_data_sizes if client_data_sizes else [1] * len(updates)
+        return fed_avg(updates, sizes)
+    elif method == "median":
+        return fed_median(updates)
+    else:
+        raise ValueError(f"Unknown aggregation method '{method}'. "
+                         f"Choose from: 'secure_shares', 'fedavg', 'median'.")
+

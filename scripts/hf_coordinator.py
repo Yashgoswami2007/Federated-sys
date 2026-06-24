@@ -235,7 +235,7 @@ class HFCoordinator:
         self._report_backend("POST", "/api/models/global", {
             "name": "TinyLlama-1.1B-Chat-AFLoRA",
             "version": f"v0.7.{round_num}",
-            "accuracy": 94.2 + (round_num * 0.1),  # Mock accuracy increase
+            "accuracy": None,  # Populated by post-round evaluator; never hardcoded
             "round_number": round_num,
             "hf_path": f"{self.repo_id}/{global_path}"
         })

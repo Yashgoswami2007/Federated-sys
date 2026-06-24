@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-06-24T06:04:29.351107Z",
+  "hardware": {
+    "nodes": [
+      {
+        "gpu_id": 0,
+        "name": "NVIDIA GeForce RTX 5060 Laptop GPU",
+        "vram_gb": 8.0,
+        "backend": "cuda"
+      }
+    ],
+    "has_gpu": true,
+    "has_amd": false,
+    "pytorch": "2.11.0+cu128"
+  },
+  "run": {
+    "elapsed_s": 1.84720778465271,
+    "rounds": 5,
+    "clients": 3
+  },
+  "pytorch_version": "2.11.0+cu128"
+}
