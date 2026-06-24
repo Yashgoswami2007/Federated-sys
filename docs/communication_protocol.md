@@ -140,11 +140,10 @@ python experiments/mvp_sentiment/run_mvp.py \
 All backend calls are best-effort. A failed POST/PATCH is logged in verbose mode
 but does not stop local training, aggregation, metrics, or artifact writing.
 
-For local MVP testing without PostgreSQL, run the backend in in-memory mode:
+For local MVP testing, ensure PostgreSQL is configured and run the backend:
 
 ```powershell
 # Windows (PowerShell)
-$env:BACKEND_IN_MEMORY = "true"
 $env:BACKEND_AUTH_DISABLED = "true"
 $env:PYTHONPATH = "."
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
@@ -152,24 +151,19 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 # Linux / WSL2
-BACKEND_IN_MEMORY=true BACKEND_AUTH_DISABLED=true \
+BACKEND_AUTH_DISABLED=true \
   python -m uvicorn backend.main:app --reload --port 8000
 ```
 
-This mode stores devices, rounds, metrics, events, and global model metadata in
-process memory. It is only for local comms/frontend integration testing. The real
-backend path still uses PostgreSQL.
-
 ### Verified MVP Backend Flow
 
-This flow was verified locally with the in-memory backend mode.
+This flow was verified locally.
 
-Terminal 1: start the FastAPI backend without PostgreSQL (Windows):
+Terminal 1: start the FastAPI backend (Windows):
 
 ```powershell
 .\venv\Scripts\Activate.ps1
 $env:PYTHONPATH = "."
-$env:BACKEND_IN_MEMORY = "true"
 $env:BACKEND_AUTH_DISABLED = "true"
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -283,10 +277,11 @@ Each federated round follows this sequence:
 3. each client trains locally
 4. each client creates a ClientUpdate message
 5. coordinator receives all ClientUpdate messages
-6. coordinator aggregates weights with FedAvg
-7. coordinator saves GlobalUpdate for round N
-8. coordinator writes round metrics
-9. next round starts from the new global weights
+6. coordinator validates updates (filters NaN/Inf, clips extreme norms for BFT)
+7. coordinator aggregates weights with FedAvg (or FedMedian)
+8. coordinator saves GlobalUpdate for round N
+9. coordinator writes round metrics
+10. next round starts from the new global weights
 ```
 
 ## ClientUpdate Message

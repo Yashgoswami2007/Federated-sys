@@ -154,12 +154,11 @@ FusionNet runs a centralized **FastAPI backend** tracking live metrics, which po
 - **Models & Schemas**: Matches exact TypeScript interfaces expected by the frontend (Device, Round, Metric, Event).
 - **Real-Time Delivery**: Multi-channel WebSocket manager pushes live stats seamlessly to clients.
 
-### In-Memory Mode (No PostgreSQL Required)
+### Persistent Backend (PostgreSQL Required)
 
-For local development and demos, set `BACKEND_IN_MEMORY=true` in `.env`. The backend switches to `backend/routers/in_memory.py`, which stores all state in process memory using plain Python dicts. All REST API routes are identical — the frontend and clients connect the same way.
+The backend stores all state, telemetry, and metrics in PostgreSQL.
 
 ```env
-BACKEND_IN_MEMORY=true
 BACKEND_AUTH_DISABLED=true
 ```
 

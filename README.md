@@ -631,7 +631,7 @@ The local client proof-of-concept has been successfully implemented in the `fusi
 fusionnet/
 ├── README.md
 ├── HOW_TO_RUN.md                  # ⬅️ Step-by-step run guide + LAN discovery
-├── .env                           # ⬅️ (gitignored) HF_TOKEN, BACKEND_IN_MEMORY, etc.
+├── .env                           # ⬅️ (gitignored) HF_TOKEN, etc.
 ├── docs/
 ├── backend/                       # ⬅️ FastAPI Telemetry & Orchestration Backend
 │   ├── main.py                    # Server entry point
@@ -729,6 +729,9 @@ During development and live testing, several issues were identified and resolved
     - Built a robust `PrivacyAccountant` in `federation/privacy.py` that tracks cumulative epsilon (ε) across rounds, persists it to disk, and throws hard stops if the system exceeds its total privacy budget.
 23. **Tempfile Uploads**:
     - Fixed race conditions and orphaned file issues during HuggingFace Hub uploads by adopting OS-level temporary files (`tempfile.NamedTemporaryFile`).
+24. **Byzantine Fault Tolerance (BFT) Defenses**:
+    - Hardened `aggregator.py` against model poisoning, scaling attacks, and data corruption.
+    - Added `NaN/Inf` update rejection, median-norm L2 clipping (to block 1000x scaling attacks), and implemented a `fed_median` aggregation fallback to mathematically filter out stealthy backdoors and Byzantine actors.
 
 ---
 
@@ -760,7 +763,6 @@ Create a `.env` file in the repo root:
 ```env
 HF_TOKEN=your_token_here
 HF_REPO_ID=yash-goswami/fusionnet-coordinator
-BACKEND_IN_MEMORY=true
 BACKEND_AUTH_DISABLED=true
 ```
 
@@ -781,7 +783,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
 `--host 0.0.0.0` makes the backend reachable by edge devices on the same network.
 
-> To use PostgreSQL instead of in-memory mode, remove `BACKEND_IN_MEMORY=true` from `.env` and run Alembic migrations first.
+> **Note**: You must run Alembic migrations (`alembic upgrade head`) to initialize the PostgreSQL database before starting the backend.
 
 ### Step 3 — Run the Coordinator
 

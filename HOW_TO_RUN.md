@@ -13,7 +13,7 @@ This guide covers running FusionNet end-to-end: backend, dashboard, coordinator,
 | Git | To clone the repo |
 | Hugging Face account | Free — get a **write-scope token** at [hf.co/settings/tokens](https://huggingface.co/settings/tokens) |
 
-> PostgreSQL is **not required**. The backend runs fully in-memory by default.
+> PostgreSQL **is required**. The backend relies on a persistent database.
 
 ---
 
@@ -29,7 +29,6 @@ Create a `.env` file in the repo root:
 ```env
 HF_TOKEN=hf_your_token_here
 HF_REPO_ID=yash-goswami/fusionnet-coordinator
-BACKEND_IN_MEMORY=true
 BACKEND_AUTH_DISABLED=true
 ```
 
@@ -203,7 +202,7 @@ To test federating with multiple clients on one PC:
 → Make sure the backend was started with `--host 0.0.0.0` (not just `localhost`). Check your firewall allows port 8000.
 
 **Frontend shows no data**  
-→ The backend resets on restart (in-memory mode). Rerun the coordinator and clients to generate fresh data.
+→ Ensure your PostgreSQL database is running and Alembic migrations have been applied.
 
 ---
 

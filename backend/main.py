@@ -29,24 +29,18 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"message": "Internal Server Error"}
     )
 
-if settings.BACKEND_IN_MEMORY:
-    from backend.routers.in_memory import router as in_memory_router
+from backend.routers import (
+    devices_router, rounds_router, metrics_router,
+    events_router, dashboard_router, models_router, privacy_router
+)
 
-    logger.warning("BACKEND_IN_MEMORY is enabled; using process-local telemetry storage.")
-    app.include_router(in_memory_router)
-else:
-    from backend.routers import (
-        devices_router, rounds_router, metrics_router,
-        events_router, dashboard_router, models_router, privacy_router
-    )
-
-    app.include_router(devices_router)
-    app.include_router(rounds_router)
-    app.include_router(metrics_router)
-    app.include_router(events_router)
-    app.include_router(dashboard_router)
-    app.include_router(models_router)
-    app.include_router(privacy_router)
+app.include_router(devices_router)
+app.include_router(rounds_router)
+app.include_router(metrics_router)
+app.include_router(events_router)
+app.include_router(dashboard_router)
+app.include_router(models_router)
+app.include_router(privacy_router)
 app.include_router(ws_router)
 
 @app.on_event("startup")
