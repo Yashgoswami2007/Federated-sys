@@ -3,7 +3,6 @@ import psutil
 
 
 def select_model_for_hardware():
-   
     print("Evaluating local hardware to select optimal model...")
     
     if torch.cuda.is_available():
