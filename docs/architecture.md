@@ -209,66 +209,16 @@ At startup, `client.py` validates the `config.yaml` file against the schema, ver
 
 ---
 
-## AFLoRA Client Performance Optimization
+## AFLoRA Federated Parameter Contract
+AFLoRA uses the adapter math `Delta W = A x Lambda x B`.
 
-To resolve client-side federated learning bottlenecks on hardware:
-1. **Trainable A Matrix**: The global `self.A` parameter is now fully trainable locally alongside `B` and `Lambda`. This ensures the exported `A` matrices carry the true client learning signal to the coordinator, while personalization matrices (`B` and `Lambda`) remain secure on the device.
-2. **ModuleList Recursion**: Injected adapters now correctly target and replace linear layers within PyTorch `nn.ModuleList` and `nn.ModuleDict` modules by executing key/index-based assignments (`model[int(name)] = aflora_layer`) instead of `setattr`.
+Current training contract:
 
+1. **Local training updates A, B, and Lambda**: all three AFLoRA parameters are trainable on each client.
+2. **Only A is federated**: after local training, the client exports/uploads the ordered `A` matrices for aggregation. This ensures the exported `A` matrices carry the client learning signal to the coordinator.
+3. **B and Lambda stay local**: the client saves `B` and `Lambda` to `local_B.pt` and `local_lambda.pt`; they are never uploaded or averaged.
+4. **Coordinator aggregates A only**: FedAvg runs layer-by-layer across matching client `A` matrices, then publishes the next global A.
 
----
+This gives the system a shared global update through `A` while keeping local personalization in `B` and `Lambda`.
 
-## LAN Auto-Discovery
-
-FusionNet uses **mDNS** (via the `zeroconf` library) to let edge devices on the same WiFi or LAN automatically find the coordinator without any manual IP configuration.
-
-### How It Works
-
-```
-Coordinator machine
-  └─► advertise_coordinator(port=8000)
-        broadcasts _fusionnet._tcp.local. via mDNS
-
-Client machine (same network)
-  └─► find_coordinator(timeout=10)
-        listens for _fusionnet._tcp.local.
-        returns "http://192.168.x.x:8000"
-```
-
-The logic lives in `fusionnet-client/discovery.py`:
-
-- `advertise_coordinator(port)` — called by `scripts/hf_coordinator.py` at startup. Registers a mDNS service record. Returns a `ServiceRegistration` object with a `.stop()` method.
-- `find_coordinator(timeout, fallback_url)` — called by `fusionnet-client/main.py` before connecting to the backend. Scans the local network for up to `timeout` seconds, returns the URL or `fallback_url` if nothing is found.
-
-### Priority Order (Client)
-
-```
-1. --backend-url CLI flag      (explicit override, skips discovery)
-2. mDNS LAN scan (10s)         (automatic, no config needed)
-3. config.yaml backend.url     (manual fallback)
-4. http://localhost:8000        (last resort default)
-```
-
-### Coordinator CLI Flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--port` | 8000 | Port to advertise in the mDNS record |
-| `--no-advertise` | — | Disable mDNS advertisement entirely |
-
-### When mDNS Is Blocked
-
-Some enterprise or university networks block mDNS (UDP port 5353). In that case:
-
-```powershell
-# On the client, specify the backend URL directly
-python main.py --client-id 1 --backend-url http://192.168.1.42:8000
-```
-
-Or set it permanently in `fusionnet-client/config.yaml`:
-
-```yaml
-backend:
-  url: "http://192.168.1.42:8000"
-  enabled: true
-```
+Adapter injection also correctly targets and replaces linear layers within PyTorch `nn.ModuleList` and `nn.ModuleDict` modules by executing key/index-based assignments (`model[int(name)] = aflora_layer`) instead of `setattr`.

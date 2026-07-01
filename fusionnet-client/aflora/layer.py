@@ -6,9 +6,11 @@ class AFLoRALayer(nn.Module):
     """
     Adaptive Federated LoRA Layer.
     ΔW = A × Λ × B
-    A is the global shared matrix (trained locally, aggregated globally).
-    Λ is the local trainable diagonal matrix.
-    B is the local trainable matrix.
+
+    A is the global shared matrix trained locally, uploaded for federation,
+    and aggregated globally.
+    Λ is the local trainable diagonal matrix that stays on device.
+    B is the local trainable matrix that stays on device.
     """
     def __init__(self, base_layer, rank, alpha=16):
         super().__init__()
@@ -25,11 +27,12 @@ class AFLoRALayer(nn.Module):
         self.rank = rank
         self.scaling = alpha / rank
         
-        # A: Global Shared Matrix (out_features x rank)
+        # A: Global shared matrix (out_features x rank).
+        # Trained locally, then exported for FedAvg.
         self.A = nn.Parameter(torch.empty(self.out_features, rank), requires_grad=True)
-        # B: Local Trainable Matrix (rank x in_features)
+        # B: Local trainable matrix (rank x in_features). Stays on device.
         self.B = nn.Parameter(torch.empty(rank, self.in_features), requires_grad=True)
-        # Λ: Local Diagonal Matrix (rank)
+        # Lambda: Local diagonal scaling vector (rank). Stays on device.
         self.Lambda = nn.Parameter(torch.ones(rank), requires_grad=True)
         
         self.reset_parameters()
@@ -76,4 +79,3 @@ class AFLoRALayer(nn.Module):
         lora_out = torch.nn.functional.linear(lora_Lambda_out, A)
 
         return base_out + lora_out * self.scaling
-

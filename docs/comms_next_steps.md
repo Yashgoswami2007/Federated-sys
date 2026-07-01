@@ -48,7 +48,9 @@ received round status, events, metrics, and dashboard KPI data.
 
 3. **real ML adapter bridge**
    - ML side exposes real adapter updates from LoRA/AFLoRA training
-   - comms replaces fake tensors with real adapter weights
+   - comms replaces fake tensors with real `A` matrix updates
+   - local training updates `A`, `B`, and `Lambda`, but only `A` is sent to the coordinator
+   - `B` and `Lambda` remain private on the client as `local_B.pt` and `local_lambda.pt`
    - coordinator aggregation logic should stay mostly unchanged
 
 4. **persistent backend mode**

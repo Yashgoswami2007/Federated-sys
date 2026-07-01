@@ -23,7 +23,10 @@ def inject_aflora(model, target_modules, rank, alpha=16):
 
 def get_aflora_parameters(model):
     """
-    Returns lists of A, B and Lambda parameters for the optimizer.
+    Returns lists of A, B, and Lambda parameters for local training.
+
+    A is uploaded for federation after local training. B and Lambda remain local
+    and are saved in the client's checkpoint directory.
     """
     a_params = []
     b_params = []

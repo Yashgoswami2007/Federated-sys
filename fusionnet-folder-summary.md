@@ -34,7 +34,7 @@
 
 - `training/engine.py`
   - Defines training utilities.
-  - Builds the DataLoader and optimizer for AFLoRA A, B and Lambda parameters.
+  - Builds the DataLoader and optimizer for AFLoRA A, B, and Lambda parameters.
   - Runs one local training epoch with correct gradient lifecycle: `zero_grad → forward → backward → step → zero_grad`.
   - Both Opacus and CustomPrivacyEngine paths call `zero_grad()` after `step()` to prevent gradient accumulation across batches.
   - **Updated:** Clones input IDs to initialize target labels (`batch['labels'] = batch['input_ids'].clone()`) to prevent shape mismatch issues on target causal text generation tasks like Banking77.
@@ -44,12 +44,12 @@
   - Any `model.name` value in config is overridden to the federation constant with a warning — prevents aggregation crashes from shape mismatches.
   - Uses 4-bit NF4 quantization on GPU (bitsandbytes); falls back to FP32 on CPU (`device_map=None`).
   - **Updated:** Uses `torch_dtype` instead of the invalid `dtype` parameter when calling `from_pretrained()` to prevent runtime errors.
-  - Freezes all base model weights so only AFLoRA A, B and Lambda matrices train.
+  - Freezes all base model weights so only AFLoRA adapter parameters (`A`, `B`, and `Lambda`) train.
 
 - `aflora/layer.py`
   - Defines the `AFLoRALayer`.
   - Implements the adapter math `ΔW = A × Λ × B`.
-  - Trains A locally alongside B/Λ to capture and export the local learning signal.
+  - Trains `A`, `B`, and `Lambda` locally; only `A` is exported for federation, while `B`/`Lambda` stay local.
   - **Updated:** Casts AFLoRA weights (`A`, `B`, and `Lambda`) to the input tensor's `device` and `dtype` dynamically during `forward()`, avoiding CPU/CUDA device and precision mismatches.
 
 - `aflora/injection.py`
