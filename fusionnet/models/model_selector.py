@@ -3,12 +3,7 @@ import psutil
 
 
 def select_model_for_hardware():
-    """
-    Selects the best HuggingFace model based on available hardware (VRAM/RAM).
-    
-    Returns:
-        dict: Containing 'model_id' and 'reason' for the selection.
-    """
+   
     print("Evaluating local hardware to select optimal model...")
     
     if torch.cuda.is_available():
