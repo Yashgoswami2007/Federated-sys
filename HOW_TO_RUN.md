@@ -2,6 +2,8 @@
 
 This guide covers running FusionNet end-to-end: backend, dashboard, coordinator, and edge clients — including auto-discovery of the coordinator on your local network (WiFi or LAN).
 
+> **Fastest option:** Use Docker! See the [Docker Quick-Start](#docker-quick-start) section below — no Python/Node setup needed.
+
 ---
 
 ## Prerequisites
@@ -13,7 +15,7 @@ This guide covers running FusionNet end-to-end: backend, dashboard, coordinator,
 | Git | To clone the repo |
 | Hugging Face account | Free — get a **write-scope token** at [hf.co/settings/tokens](https://huggingface.co/settings/tokens) |
 
-> PostgreSQL **is required**. The backend relies on a persistent database.
+> PostgreSQL **is required** for manual setup. The Docker path handles this automatically.
 
 ---
 
@@ -61,7 +63,7 @@ python fusionnet-client/auth.py
 ## Step 3 — Frontend dependencies (one-time)
 
 ```powershell
-cd "front end"
+cd frontend
 npm install
 cd ..
 ```
@@ -86,7 +88,7 @@ uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ### Terminal 2 — Frontend Dashboard
 
 ```powershell
-cd "front end"
+cd frontend
 npm run dev
 ```
 
@@ -217,3 +219,48 @@ The client detects GPU VRAM and sets LoRA rank and batch size automatically:
 | GPU 7.5–16 GB | 4 | 2 | 0.75 |
 | GPU < 7.5 GB | 2 | 1 | 0.5 |
 | CPU only | 2 | 1 | 0.1 |
+
+---
+
+## Docker Quick-Start
+
+Requires only [Docker Desktop](https://www.docker.com/products/docker-desktop/) — no Python, Node.js, or PostgreSQL installation needed.
+
+### 1. Configure
+
+Create a `.env` file in the repo root:
+
+```env
+HF_TOKEN=hf_your_token_here
+HF_REPO_ID=yash-goswami/fusionnet-coordinator
+BACKEND_AUTH_DISABLED=true
+```
+
+### 2. Launch
+
+```bash
+# Start everything: PostgreSQL + Backend + Frontend + 1 FL Client
+docker compose up --build
+```
+
+Then open:
+- **Dashboard:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:8000](http://localhost:8000)
+
+### 3. Scale FL Clients
+
+```bash
+# Launch 3 parallel FL client nodes
+docker compose up --build --scale fl-client=3
+```
+
+### 4. Stop
+
+```bash
+docker compose down          # Stop containers
+docker compose down -v       # Stop + delete database volume
+```
+
+### AMD GPU (Docker)
+
+Swap the base image in `fusionnet-client/Dockerfile` to `rocm/pytorch:rocm6.0_ubuntu22.04_py3.10_pytorch_2.1.2`, then `docker compose up --build fl-client`.

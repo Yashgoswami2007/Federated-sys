@@ -1,0 +1,15 @@
+venv/
+.git/
+.next/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+checkpoints/
+*.db
+*.pdf
+err.txt
+run_output.txt
+frontend/.next/
+frontend/node_modules/

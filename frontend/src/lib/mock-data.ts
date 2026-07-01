@@ -7,7 +7,7 @@ export const regionData: RegionData[] = [];
 // Static mock data for other views and dashboard components
 export const kpiMetrics: KpiMetric[] = [
   { label: "Active Nodes", value: "247", change: "+12.3% vs last week", trend: "up", icon: "layers" },
-  { label: "Training Accuracy", value: "94.2%", change: "+0.4% improvement", trend: "up", icon: "target" },
+  { label: "Training Accuracy", value: "85.2%", change: "+0.4% improvement", trend: "up", icon: "target" },
   { label: "SecAgg Coverage", value: "100%", change: "Fully verified", trend: "neutral", icon: "shield" },
   { label: "Avg Round Time", value: "4.2 mins", change: "-1.5% speedup", trend: "up", icon: "cpu" }
 ];
@@ -50,15 +50,15 @@ export const privacyMetrics = {
 export const globalModel: GlobalModel = {
   name: "TinyLlama-1.1B",
   version: "v1.2.0",
-  accuracy: 94.2,
+  accuracy: 85.2,
   lastUpdated: new Date().toISOString()
 };
 
 export const accuracyTrend: ChartDataPoint[] = [
-  { label: "Round 1", value: 92.5 },
-  { label: "Round 2", value: 93.1 },
-  { label: "Round 3", value: 93.8 },
-  { label: "Round 4", value: 94.2 }
+  { label: "Round 1", value: 50.5 },
+  { label: "Round 2", value: 65.1 },
+  { label: "Round 3", value: 78.8 },
+  { label: "Round 4", value: 85.2 }
 ];
 
 export const lossCurve: ChartDataPoint[] = [
@@ -69,10 +69,10 @@ export const lossCurve: ChartDataPoint[] = [
 ];
 
 export const analyticsAccuracy: ChartDataPoint[] = [
-  { label: "Round 1", value: 92.5 },
-  { label: "Round 2", value: 93.1 },
-  { label: "Round 3", value: 93.8 },
-  { label: "Round 4", value: 94.2 }
+  { label: "Round 1", value: 50.5 },
+  { label: "Round 2", value: 65.1 },
+  { label: "Round 3", value: 78.8 },
+  { label: "Round 4", value: 85.2 }
 ];
 
 export const deviceParticipation: ChartDataPoint[] = [

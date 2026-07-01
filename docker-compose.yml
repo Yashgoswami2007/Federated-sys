@@ -1,0 +1,90 @@
+# ── FusionNet Docker Compose ──────────────────────────────────────────────────
+# Usage:
+#   docker compose up --build              # Start all services
+#   docker compose up --build backend      # Start backend only
+#   docker compose up --build --scale fl-client=3  # Start 3 FL clients
+#
+# Environment variables are read from .env in the repo root.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL Database ───────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fusionnet
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI Backend Server ────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/fusionnet
+      BACKEND_AUTO_CREATE_TABLES: "true"
+      BACKEND_AUTH_DISABLED: "true"
+      CORS_ORIGINS: "*"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./checkpoints:/app/checkpoints
+
+  # ── Next.js Dashboard Frontend ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+  # ── FL Client Node (scale with --scale fl-client=N) ───────────────────────
+  fl-client:
+    build:
+      context: .
+      dockerfile: fusionnet-client/Dockerfile
+    env_file:
+      - .env
+    environment:
+      BACKEND_URL: http://backend:8000
+      HF_TOKEN: ${HF_TOKEN}
+    depends_on:
+      - backend
+    volumes:
+      - ./checkpoints:/app/checkpoints
+      - ./fusionnet:/fusionnet-core/fusionnet
+    # Override CMD per instance. Use --scale fl-client=3 to launch multiple.
+    # Each container gets a unique hostname that can be used as client ID.
+    entrypoint: >
+      python main.py
+        --backend-url http://backend:8000
+        --no-discovery
+        --rounds 3
+        --num-clients 3
+
+volumes:
+  pgdata:

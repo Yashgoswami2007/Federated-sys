@@ -109,7 +109,7 @@ class BackendClient:
         if update_data:
             self._safe_patch(f"/api/rounds/{round_num}", update_data)
             
-    def update_global_model(self, name: str, version: str, round_num: int, hf_path: str, accuracy: float = 94.2) -> None:
+    def update_global_model(self, name: str, version: str, round_num: int, hf_path: str, accuracy: float = 0.0) -> None:
         self._safe_post("/api/models/global", {
             "name": name,
             "version": version,

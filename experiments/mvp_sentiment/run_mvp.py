@@ -46,34 +46,55 @@ class ClientProfile:
 class LocalClient:
     """Simulates one edge node training on private local data."""
 
-    def __init__(self, profile: ClientProfile, target_weights: Any):
+    def __init__(self, profile: ClientProfile, X: np.ndarray, y: np.ndarray):
         self.profile = profile
-        self.target_weights = target_weights
+        self.X = X
+        self.y = y
 
     def train(self, global_weights: dict[str, Any], round_num: int) -> ClientUpdate:
         start = time.perf_counter()
-        current = global_weights[ADAPTER_KEY]
+        
+        w = global_weights[ADAPTER_KEY]
+        if torch is not None and isinstance(w, torch.Tensor):
+            w = w.numpy()
 
-        noise = randn_like(current, seed=1000 + round_num * 97 + self.profile.num_samples)
-        noise = noise * (self.profile.noise_scale / round_num)
-
-        local_delta = (self.target_weights - current) * self.profile.learning_rate
-        updated = current + local_delta + noise
-
-        loss = mean_scalar((updated - self.target_weights) ** 2)
-        accuracy = max(0.0, min(0.99, 1.0 - loss))
+        w_local = np.copy(w)
+        epochs = 5
+        lr = self.profile.learning_rate / (1 + 0.1 * round_num)
+        num_samples = len(self.y)
+        
+        for _ in range(epochs):
+            logits = np.dot(self.X, w_local)
+            preds = 1 / (1 + np.exp(-np.clip(logits, -250, 250)))
+            error = preds - self.y
+            grad = np.dot(self.X.T, error) / num_samples
+            w_local -= lr * grad
+            
+        noise = np.random.normal(0, self.profile.noise_scale / round_num, w_local.shape)
+        w_local += noise
+        
+        final_logits = np.dot(self.X, w_local)
+        final_preds = 1 / (1 + np.exp(-np.clip(final_logits, -250, 250)))
+        
+        loss = -np.mean(self.y * np.log(final_preds + 1e-7) + (1 - self.y) * np.log(1 - final_preds + 1e-7))
+        accuracy = np.mean((final_preds >= 0.5) == self.y)
+        
         epsilon = round(0.18 * round_num + self.profile.noise_scale, 4)
         train_time_s = time.perf_counter() - start
+
+        w_updated = w_local
+        if torch is not None:
+            w_updated = torch.from_numpy(w_local).float()
 
         return ClientUpdate(
             client_id=self.profile.client_id,
             round_num=round_num,
             num_samples=self.profile.num_samples,
             hardware_tier=self.profile.hardware_tier,
-            weights={ADAPTER_KEY: clone_array(updated)},
+            weights={ADAPTER_KEY: clone_array(w_updated)},
             metrics={
-                "loss": round(loss, 6),
-                "accuracy": round(accuracy, 6),
+                "loss": round(float(loss), 6),
+                "accuracy": round(float(accuracy), 6),
                 "epsilon": epsilon,
                 "train_time_s": round(train_time_s, 6),
             },
@@ -203,10 +224,23 @@ def build_clients(adapter_shape: tuple[int, int]) -> list[LocalClient]:
     ]
 
     clients: list[LocalClient] = []
+    
+    np.random.seed(42)
+    true_w = np.random.randn(adapter_shape[0], adapter_shape[1])
+    
     for idx, profile in enumerate(profiles):
-        target = randn(adapter_shape, seed=42 + idx)
-        target = target * (0.25 + idx * 0.05)
-        clients.append(LocalClient(profile, target))
+        X = np.random.randn(profile.num_samples, adapter_shape[0])
+        logits = np.dot(X, true_w)
+        y = (logits > 0).astype(float)
+        
+        noise_idx = np.random.choice(len(y), int(len(y) * 0.1), replace=False)
+        if len(y.shape) > 1:
+            for i in noise_idx:
+                y[i] = 1 - y[i]
+        else:
+            y[noise_idx] = 1 - y[noise_idx]
+            
+        clients.append(LocalClient(profile, X, y))
     return clients
 
 

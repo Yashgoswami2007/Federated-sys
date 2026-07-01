@@ -632,8 +632,13 @@ fusionnet/
 ├── README.md
 ├── HOW_TO_RUN.md                  # ⬅️ Step-by-step run guide + LAN discovery
 ├── .env                           # ⬅️ (gitignored) HF_TOKEN, etc.
+├── docker-compose.yml             # ⬅️ One-command full-stack launch
+├── .dockerignore
 ├── docs/
+│   ├── amd_evidence/              # ⬅️ ROCm hardware utilization logs
+│   └── privacy_proof.md           # ⬅️ Full DP mathematical proof
 ├── backend/                       # ⬅️ FastAPI Telemetry & Orchestration Backend
+│   ├── Dockerfile                 # ⬅️ Docker image (Python 3.11 + uvicorn)
 │   ├── main.py                    # Server entry point
 │   ├── config.py                  # Database & token settings
 │   ├── database.py                # Async SQLAlchemy setup
@@ -641,7 +646,12 @@ fusionnet/
 │   ├── models/                    # DB schemas (Device, Round, Metric, etc.)
 │   ├── routers/                   # REST API routes & WebSocket (incl. in_memory.py)
 │   └── websocket/                 # Live dashboard broadcasting
+├── frontend/                      # ⬅️ Next.js Dashboard (renamed from 'front end')
+│   ├── Dockerfile                 # ⬅️ Multi-stage build (Node 20-alpine)
+│   ├── package.json
+│   └── src/
 ├── fusionnet-client/              # ⬅️ Local Client PoC Component
+│   ├── Dockerfile                 # ⬅️ FL node image (CPU PyTorch; swap for ROCm)
 │   ├── README.md
 │   ├── main.py                    # Node CLI entry point (--client-id, --num-clients, --rounds, --backend-url, --no-discovery)
 │   ├── client.py                  # FusionNetClient orchestrator
@@ -706,8 +716,8 @@ During development and live testing, several issues were identified and resolved
 10. **Dynamic Repository Configuration (`fusionnet-client/config.yaml`, `scripts/hf_coordinator.py`)**:
     - Replaced hardcoded Hugging Face repository IDs with environment variables to improve security and deployment flexibility.
 11. **Frontend Framework Compatibility Downgrade**:
-    - Downgraded Next.js from experimental version `16.2.9` to stable `^14.2.4` and React to `^18.2.0` to eliminate runtime instability. Included Next.js 14-supported `Inter` and `Fira Code` Google fonts inside `front end/src/app/layout.tsx`.
-12. **Unified WebSocket Context Provider (`front end/src/lib/websocket-context.tsx`)**:
+    - Downgraded Next.js from experimental version `16.2.9` to stable `^14.2.4` and React to `^18.2.0` to eliminate runtime instability. Included Next.js 14-supported `Inter` and `Fira Code` Google fonts inside `frontend/src/app/layout.tsx`.
+12. **Unified WebSocket Context Provider (`frontend/src/lib/websocket-context.tsx`)**:
     - Replaced component-specific WebSocket client connections with a unified `useWebSocket` Context that establishes a single, shared connection to `/ws/all` on the backend, handling auto-reconnection and client registry events.
 13. **WebSocket Heartbeat & Safety Limits (`backend/websocket/manager.py`, `backend/routers/ws.py`)**:
     - Implemented a 100-connection limit check and updated message broadcasting to use `asyncio.gather` for true concurrency. Added a 30-second ping/pong validation loop that terminates idle, stale connections.
@@ -853,6 +863,66 @@ Always activate the virtual environment (`.\venv\Scripts\Activate.ps1`) before e
 | Run single node | `python main.py --client-id 0` | `python main.py --client-id 0` |
 | LAN discovery off | `python main.py --no-discovery` | `python main.py --no-discovery` |
 
+
+---
+
+## 🐳 Docker Quick-Start
+
+> The fastest way to run FusionNet. Requires only [Docker Desktop](https://www.docker.com/products/docker-desktop/) — no Python, Node.js, or PostgreSQL installation needed.
+
+### One-Command Launch
+
+```bash
+# Start everything: PostgreSQL + Backend + Frontend + 1 FL Client
+docker compose up --build
+```
+
+Then open:
+- **Dashboard:** [http://localhost:3000](http://localhost:3000)
+- **Backend API:** [http://localhost:8000](http://localhost:8000)
+
+### Scaling FL Clients
+
+```bash
+# Launch 3 FL client nodes
+docker compose up --build --scale fl-client=3
+
+# Start only the backend + database
+docker compose up --build backend db
+```
+
+### Services
+
+| Service | Container | Port | Description |
+|---|---|---|---|
+| `db` | PostgreSQL 16 | 5432 | Persistent database |
+| `backend` | Python 3.11 + FastAPI | 8000 | REST API + WebSocket server |
+| `frontend` | Node 20 + Next.js | 3000 | Live monitoring dashboard |
+| `fl-client` | Python 3.11 + PyTorch CPU | — | Federated learning edge node |
+
+### AMD GPU Support (Docker)
+
+To run FL clients with AMD ROCm GPU acceleration, swap the base image in `fusionnet-client/Dockerfile`:
+
+```dockerfile
+# Replace: FROM python:3.11-slim
+# With:
+FROM rocm/pytorch:rocm6.0_ubuntu22.04_py3.10_pytorch_2.1.2
+```
+
+Then rebuild: `docker compose up --build fl-client`
+
+### Environment Variables
+
+All services read from the `.env` file in the repo root. Key variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `HF_TOKEN` | — | Hugging Face API token (required) |
+| `HF_REPO_ID` | `yash-goswami/fusionnet-coordinator` | HF Hub repo for weight exchange |
+| `BACKEND_AUTH_DISABLED` | `true` | Disable HF token auth for local dev |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins |
+| `DATABASE_URL` | `postgresql+asyncpg://...` | Auto-set by docker-compose |
 
 ---
 

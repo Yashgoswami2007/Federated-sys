@@ -16,7 +16,7 @@ app = FastAPI(title="FusionNet Backend", version="0.1.0")
 app.add_middleware(HFAuthMiddleware)
 # CORS_ORIGINS env var: comma-separated list of allowed origins.
 # Example: CORS_ORIGINS=https://fusionnet.vercel.app,http://localhost:3000
-_cors_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+_cors_env = os.getenv("CORS_ORIGINS", "*")
 CORS_ORIGINS = [origin.strip() for origin in _cors_env.split(",") if origin.strip()]
 
 app.add_middleware(

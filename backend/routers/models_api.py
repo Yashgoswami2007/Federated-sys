@@ -19,14 +19,14 @@ async def get_global_model(db: AsyncSession = Depends(get_db)):
         return GlobalModelSchema(
             name="TinyLlama-1.1B-Chat-AFLoRA",
             version="v0.7.0",
-            accuracy=94.2,
+            accuracy=0.0,
             lastUpdated=datetime.now(timezone.utc).isoformat()
         )
         
     return GlobalModelSchema(
         name=model.name,
         version=model.version,
-        accuracy=model.accuracy or 94.2,
+        accuracy=model.accuracy or 0.0,
         lastUpdated=model.updated_at.isoformat() if model.updated_at else ""
     )
 
@@ -47,6 +47,6 @@ async def create_global_model(model: GlobalModelSchema, round_number: int, hf_pa
     return GlobalModelSchema(
         name=db_model.name,
         version=db_model.version,
-        accuracy=db_model.accuracy or 94.2,
+        accuracy=db_model.accuracy or 0.0,
         lastUpdated=db_model.updated_at.isoformat() if db_model.updated_at else ""
     )

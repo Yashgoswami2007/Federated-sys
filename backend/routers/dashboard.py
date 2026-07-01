@@ -45,7 +45,7 @@ async def get_kpi_metrics(db: AsyncSession = Depends(get_db)):
         ),
         KpiMetric(
             label="Model Accuracy",
-            value=f"{round(latest_accuracy, 2)}%" if latest_accuracy else "94.2%",
+            value=f"{round(latest_accuracy, 2)}%" if latest_accuracy else "0.0%",
             change="+0.8% overall",
             trend="up",
             icon="target"
